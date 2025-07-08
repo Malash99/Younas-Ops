@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  underwater-vo:
+    build: .
+    container_name: underwater_vo
+    volumes:
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./notebooks:/app/notebooks
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    network_mode: host
+    stdin_open: true
+    tty: true
+    command: bash
