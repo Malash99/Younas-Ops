@@ -266,7 +266,6 @@ class RosbagExtractor:
         
         print("\nExtraction complete!")
 
-
 def main():
     parser = argparse.ArgumentParser(description='Extract data from ROS bag file')
     parser.add_argument('--bag', type=str, default='/app/data/raw/ariel_2023-12-21-14-26-32_2.bag',
@@ -282,13 +281,12 @@ def main():
     
     args = parser.parse_args()
     
-    # Initialize ROS node (required for cv_bridge)
-    rospy.init_node('rosbag_extractor', anonymous=True)
+    # Remove this line to avoid needing a ROS master
+    # rospy.init_node('rosbag_extractor', anonymous=True)
     
     # Extract data
     extractor = RosbagExtractor(args.bag, args.output)
     extractor.extract_all(args.image_topic, args.pose_topic, args.max_images)
-
 
 if __name__ == "__main__":
     main()

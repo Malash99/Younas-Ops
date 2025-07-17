@@ -19,7 +19,7 @@ sleep 2
 
 # Prepare data from ROS bag and TUM file
 echo -e "\n3. Preparing data from ROS bag and TUM trajectory..."
-docker-compose exec underwater-vo python3 /app/scripts/prepare_underwater_data.py
+docker-compose exec underwater-vo bash -c "source /opt/ros/noetic/setup.bash && python3 /app/scripts/prepare_underwater_data.py --image_topic /alphasense_driver_ros/cam0 --pose_topic /qualisys/ariel/odom --skip_extraction"
 
 # Check if data preparation was successful
 if [ $? -eq 0 ]; then

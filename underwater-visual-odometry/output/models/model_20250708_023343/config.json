@@ -1,0 +1,17 @@
+{
+  "data_dir": "/app/data/raw",
+  "output_dir": "/app/output/models",
+  "val_ratio": 0.2,
+  "model_type": "baseline",
+  "image_height": 224,
+  "image_width": 224,
+  "batch_size": 32,
+  "epochs": 50,
+  "learning_rate": 0.001,
+  "optimizer": "adam",
+  "loss_type": "huber",
+  "trans_weight": 1.0,
+  "rot_weight": 1.0,
+  "patience": 10,
+  "seed": 42
+}
