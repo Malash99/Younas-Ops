@@ -1,1 +1,0 @@
-# Data processing utilities for underwater visual odometry

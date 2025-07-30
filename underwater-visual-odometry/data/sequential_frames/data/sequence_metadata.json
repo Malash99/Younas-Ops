@@ -1,0 +1,47 @@
+{
+  "total_frames": 5481,
+  "total_bags": 5,
+  "bags_processed": [
+    "ariel_2023-12-21-14-24-42_0",
+    "ariel_2023-12-21-14-25-37_1",
+    "ariel_2023-12-21-14-26-32_2",
+    "ariel_2023-12-21-14-27-27_3",
+    "ariel_2023-12-21-14-28-22_4"
+  ],
+  "cameras": 5,
+  "time_span": {
+    "start_timestamp": 1703165082.986978,
+    "end_timestamp": 1703165356.9790084,
+    "duration_seconds": 273.9920303821564
+  },
+  "frames_per_bag": {
+    "ariel_2023-12-21-14-24-42_0": 1096,
+    "ariel_2023-12-21-14-25-37_1": 1096,
+    "ariel_2023-12-21-14-26-32_2": 1097,
+    "ariel_2023-12-21-14-27-27_3": 1096,
+    "ariel_2023-12-21-14-28-22_4": 1096
+  },
+  "description": "Sequential frame data from all bags with synchronized camera images",
+  "camera_coverage": {
+    "cam0": {
+      "frames_with_images": 5477,
+      "coverage_percentage": 99.9
+    },
+    "cam1": {
+      "frames_with_images": 5479,
+      "coverage_percentage": 100.0
+    },
+    "cam2": {
+      "frames_with_images": 5481,
+      "coverage_percentage": 100.0
+    },
+    "cam3": {
+      "frames_with_images": 5480,
+      "coverage_percentage": 100.0
+    },
+    "cam4": {
+      "frames_with_images": 5477,
+      "coverage_percentage": 99.9
+    }
+  }
+}

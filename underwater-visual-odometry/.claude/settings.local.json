@@ -9,7 +9,9 @@
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(python:*)",
       "Bash(docker compose:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(rosbag info:*)",
+      "Bash(timeout 30 docker compose up -d)"
     ],
     "deny": []
   }

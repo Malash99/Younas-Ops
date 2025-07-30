@@ -1,1 +1,0 @@
-# Baseline CNN model training

@@ -1,0 +1,64 @@
+# Image data directories
+data/images/
+data/test_images/
+data/sequential_frames/images/
+
+# All image files
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+*.tif
+
+# Processed data
+data/processed/
+data/output/
+
+# ROS bag files (large binary files)
+*.bag
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# Docker volumes
+.docker/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Log files
+*.log
+logs/
+
+# Model files (can be large)
+*.h5
+*.pkl
+*.pt
+*.pth
+*.onnx
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
