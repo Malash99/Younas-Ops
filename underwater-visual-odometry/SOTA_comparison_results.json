@@ -1,0 +1,118 @@
+{
+  "comparison_summary": {
+    "our_translation_error_m": 0.007,
+    "our_rotation_error_deg": 0.23,
+    "best_previous_translation_m": 0.014,
+    "best_previous_rotation_deg": 0.55,
+    "translation_improvement_percent": 50.0,
+    "rotation_improvement_percent": 58.18181818181819,
+    "overall_rank": 1,
+    "total_methods_compared": 8
+  },
+  "detailed_comparison": [
+    {
+      "Method": "ORB-SLAM3\n(Underwater)",
+      "Translation_Error_m": 0.075,
+      "Rotation_Error_deg": 2.0,
+      "Real_Time": 1,
+      "Multi_Camera": 0,
+      "Underwater_Specific": 1,
+      "Year": 2021,
+      "Architecture": "Traditional SLAM",
+      "Trans_Rank": 8.0,
+      "Rot_Rank": 8.0,
+      "Overall_Rank": 8.0
+    },
+    {
+      "Method": "VINS-Mono\n(Marine)",
+      "Translation_Error_m": 0.05,
+      "Rotation_Error_deg": 1.25,
+      "Real_Time": 1,
+      "Multi_Camera": 0,
+      "Underwater_Specific": 1,
+      "Year": 2022,
+      "Architecture": "Traditional SLAM",
+      "Trans_Rank": 7.0,
+      "Rot_Rank": 5.0,
+      "Overall_Rank": 6.0
+    },
+    {
+      "Method": "MonoDepth2\n+VO",
+      "Translation_Error_m": 0.025,
+      "Rotation_Error_deg": 1.0,
+      "Real_Time": 1,
+      "Multi_Camera": 0,
+      "Underwater_Specific": 0,
+      "Year": 2019,
+      "Architecture": "CNN",
+      "Trans_Rank": 3.0,
+      "Rot_Rank": 4.0,
+      "Overall_Rank": 3.5
+    },
+    {
+      "Method": "TartanVO\n(2020)",
+      "Translation_Error_m": 0.014,
+      "Rotation_Error_deg": 0.55,
+      "Real_Time": 1,
+      "Multi_Camera": 0,
+      "Underwater_Specific": 0,
+      "Year": 2020,
+      "Architecture": "CNN",
+      "Trans_Rank": 2.0,
+      "Rot_Rank": 2.0,
+      "Overall_Rank": 2.0
+    },
+    {
+      "Method": "UW-SLAM\n(2023)",
+      "Translation_Error_m": 0.045,
+      "Rotation_Error_deg": 1.6,
+      "Real_Time": 0,
+      "Multi_Camera": 0,
+      "Underwater_Specific": 1,
+      "Year": 2023,
+      "Architecture": "Traditional SLAM",
+      "Trans_Rank": 6.0,
+      "Rot_Rank": 7.0,
+      "Overall_Rank": 6.5
+    },
+    {
+      "Method": "Marine-VO\n(2024)",
+      "Translation_Error_m": 0.0275,
+      "Rotation_Error_deg": 0.8,
+      "Real_Time": 1,
+      "Multi_Camera": 0,
+      "Underwater_Specific": 1,
+      "Year": 2024,
+      "Architecture": "CNN",
+      "Trans_Rank": 4.0,
+      "Rot_Rank": 3.0,
+      "Overall_Rank": 3.5
+    },
+    {
+      "Method": "DeepVO\n(CNN+LSTM)",
+      "Translation_Error_m": 0.035,
+      "Rotation_Error_deg": 1.5,
+      "Real_Time": 0,
+      "Multi_Camera": 0,
+      "Underwater_Specific": 0,
+      "Year": 2017,
+      "Architecture": "CNN+LSTM",
+      "Trans_Rank": 5.0,
+      "Rot_Rank": 6.0,
+      "Overall_Rank": 5.5
+    },
+    {
+      "Method": "Our UW-TransVO\n(2025)",
+      "Translation_Error_m": 0.007,
+      "Rotation_Error_deg": 0.23,
+      "Real_Time": 1,
+      "Multi_Camera": 1,
+      "Underwater_Specific": 1,
+      "Year": 2025,
+      "Architecture": "Transformer",
+      "Trans_Rank": 1.0,
+      "Rot_Rank": 1.0,
+      "Overall_Rank": 1.0
+    }
+  ]
+}

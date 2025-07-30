@@ -1,0 +1,110 @@
+{
+  "experiment_name": "test_4cam_seq2_vision",
+  "config": {
+    "experiment_name": "test_4cam_seq2_vision",
+    "model": {
+      "img_size": 224,
+      "patch_size": 16,
+      "d_model": 384,
+      "num_heads": 6,
+      "num_layers": 4,
+      "max_cameras": 4,
+      "max_seq_len": 2,
+      "dropout": 0.1,
+      "use_imu": false,
+      "use_pressure": false,
+      "uncertainty_estimation": true
+    },
+    "data": {
+      "data_csv": "data/processed/training_dataset/training_data.csv",
+      "data_root": "data/processed/training_dataset",
+      "camera_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "sequence_length": 2,
+      "img_size": 224,
+      "use_imu": false,
+      "use_pressure": false,
+      "augmentation": true,
+      "max_samples": 100
+    },
+    "training": {
+      "epochs": 3,
+      "batch_size": 2,
+      "mixed_precision": true,
+      "gradient_accumulation_steps": 4,
+      "log_interval": 2
+    },
+    "optimizer": {
+      "type": "adamw",
+      "lr": 0.0001,
+      "weight_decay": 0.0001,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "scheduler": {
+      "type": "cosine",
+      "min_lr": 1e-06
+    },
+    "loss": {
+      "loss_type": "pose",
+      "translation_weight": 1.0,
+      "rotation_weight": 10.0,
+      "base_loss": "mse"
+    }
+  },
+  "train_losses": [
+    {
+      "total_loss": NaN,
+      "translation_loss": NaN,
+      "rotation_loss": NaN,
+      "weighted_translation_loss": NaN,
+      "weighted_rotation_loss": NaN
+    },
+    {
+      "total_loss": NaN,
+      "translation_loss": NaN,
+      "rotation_loss": NaN,
+      "weighted_translation_loss": NaN,
+      "weighted_rotation_loss": NaN
+    },
+    {
+      "total_loss": NaN,
+      "translation_loss": NaN,
+      "rotation_loss": NaN,
+      "weighted_translation_loss": NaN,
+      "weighted_rotation_loss": NaN
+    }
+  ],
+  "val_losses": [
+    {
+      "total_loss": NaN,
+      "translation_loss": NaN,
+      "rotation_loss": NaN,
+      "weighted_translation_loss": NaN,
+      "weighted_rotation_loss": NaN
+    },
+    {
+      "total_loss": NaN,
+      "translation_loss": NaN,
+      "rotation_loss": NaN,
+      "weighted_translation_loss": NaN,
+      "weighted_rotation_loss": NaN
+    },
+    {
+      "total_loss": NaN,
+      "translation_loss": NaN,
+      "rotation_loss": NaN,
+      "weighted_translation_loss": NaN,
+      "weighted_rotation_loss": NaN
+    }
+  ],
+  "best_val_loss": Infinity,
+  "total_epochs": 3,
+  "model_parameters": 12908514
+}
