@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker exec:*)",
+      "Bash(mv:*)",
+      "Bash(python scripts/validation:*)",
+      "Bash(docker run:*)",
+      "Bash(mkdir:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(python:*)",
+      "Bash(docker compose:*)",
+      "Bash(find:*)"
+    ],
+    "deny": []
+  }
+}

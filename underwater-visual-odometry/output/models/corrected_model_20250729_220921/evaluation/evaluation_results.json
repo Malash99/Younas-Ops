@@ -1,0 +1,20 @@
+{
+  "per_frame": {
+    "translation_error_mean": 0.006523565389215946,
+    "translation_error_std": 0.004271502606570721,
+    "translation_error_median": 0.005307604558765888,
+    "rotation_error_mean": 0.014115392230451107,
+    "rotation_error_std": 0.0749136358499527,
+    "rotation_error_median": 0.007324256934225559
+  },
+  "trajectory": {
+    "ate_rmse": 0.29750453690460477,
+    "ate_mean": 0.22359438882726948,
+    "ate_std": 0.19625111149693691,
+    "rpe_trans_mean": 0.006523565389215946,
+    "rpe_trans_std": 0.004271502606570721,
+    "rpe_rot_mean": 0.7090238925634388,
+    "rpe_rot_std": 0.45132787450568046
+  },
+  "num_test_samples": 219
+}
