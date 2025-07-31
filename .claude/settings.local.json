@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(rosbag info:*)",
+      "Bash(python3:*)",
+      "Bash(docker:*)",
+      "Bash(find:*)",
+      "Bash(chmod:*)",
+      "Bash(git add:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout 60 python:*)",
+      "Bash(pip show:*)",
+      "Bash(nvidia-smi:*)"
+    ],
+    "deny": []
+  }
+}
