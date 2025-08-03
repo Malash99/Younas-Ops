@@ -347,7 +347,7 @@ def main():
         use_pressure=False,
         augmentation=False,
         split='val',  # Use validation data
-        max_samples=50  # Limit for visualization
+        max_samples=None  # Use complete dataset for full trajectory
     )
     
     print(f"Dataset loaded: {len(dataset)} sequential samples")
