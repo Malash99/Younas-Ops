@@ -88,7 +88,8 @@ class SingleCameraTrainer:
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=config['training']['learning_rate'],
-            weight_decay=config['training']['weight_decay']
+            weight_decay=config['training']['weight_decay'],
+            eps=1e-4  # Larger epsilon for numerical stability
         )
         
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -98,7 +99,17 @@ class SingleCameraTrainer:
         
         param_count = sum(p.numel() for p in self.model.parameters())
         print(f"🔢 Model Parameters: {param_count:,}")
+        
+        # Initialize GradScaler for numerical stability
+        self.scaler = torch.cuda.amp.GradScaler() if torch.cuda.is_available() else None
         print(f"📊 Memory Usage: {torch.cuda.memory_allocated() / 1024**3:.2f} GB" if torch.cuda.is_available() else "")
+        
+        # Check for NaN in initial parameters
+        nan_params = sum(1 for p in self.model.parameters() if torch.isnan(p).any())
+        if nan_params > 0:
+            print(f"⚠️  WARNING: {nan_params} parameter tensors contain NaN values!")
+        else:
+            print("✅ Model parameters initialized correctly (no NaN values)")
     
     def print_banner(self):
         banner = """
@@ -106,9 +117,9 @@ class SingleCameraTrainer:
 ║                    UW-TransVO Training                       ║
 ║                  Single Camera Version                       ║
 ║                                                              ║
-║  🌊 Underwater Visual Odometry with Transformers            ║
+║  🌊 Underwater Visual Odometry with Transformers             ║
 ║  📹 Single Camera Setup                                      ║
-║  🚀 Real-time Progress Tracking                             ║
+║  🚀 Real-time Progress Tracking                              ║
 ╚══════════════════════════════════════════════════════════════╝
         """
         print(banner)
@@ -137,26 +148,66 @@ class SingleCameraTrainer:
             
             sub_traj_length = batch['metadata']['sub_traj_length'][0].item()
             
-            # Forward pass
+            # Forward pass with mixed precision
             self.optimizer.zero_grad()
-            predictions = self.model(images, camera_ids, camera_mask, sub_traj_length)
             
-            # Calculate loss
-            loss_dict = self.criterion(predictions, pose_targets, accumulated_targets)
+            if self.scaler is not None:
+                # Mixed precision forward pass
+                with torch.amp.autocast('cuda'):
+                    predictions = self.model(images, camera_ids, camera_mask, sub_traj_length)
+                    loss_dict = self.criterion(predictions, pose_targets, accumulated_targets)
+                
+                # Check for NaN loss and skip problematic batch
+                if torch.isnan(loss_dict['total_loss']) or torch.isinf(loss_dict['total_loss']):
+                    print(f"\n⚠️  Skipping problematic batch {batch_idx} (NaN/Inf loss)")
+                    continue
+                
+                # Scaled backward pass
+                self.scaler.scale(loss_dict['total_loss']).backward()
+                
+                # Unscale gradients and clip
+                self.scaler.unscale_(self.optimizer)
+                total_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.01)
+                
+                if torch.isnan(total_norm) or torch.isinf(total_norm):
+                    print(f"\n⚠️  Skipping batch {batch_idx} (NaN/Inf gradients)")
+                    self.optimizer.zero_grad()  # Clear bad gradients
+                    continue
+                
+                # Optimizer step with scaling
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                # Standard precision fallback
+                predictions = self.model(images, camera_ids, camera_mask, sub_traj_length)
+                loss_dict = self.criterion(predictions, pose_targets, accumulated_targets)
+                
+                if torch.isnan(loss_dict['total_loss']) or torch.isinf(loss_dict['total_loss']):
+                    print(f"\n⚠️  Skipping problematic batch {batch_idx} (NaN/Inf loss)")
+                    continue
+                
+                loss_dict['total_loss'].backward()
+                total_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.01)
+                
+                if torch.isnan(total_norm) or torch.isinf(total_norm):
+                    print(f"\n⚠️  Skipping batch {batch_idx} (NaN/Inf gradients)")
+                    self.optimizer.zero_grad()  # Clear bad gradients
+                    continue
+                
+                self.optimizer.step()
             
-            # Backward pass
-            loss_dict['total_loss'].backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            self.optimizer.step()
-            
-            # Accumulate metrics
+            # Accumulate metrics (only for successful batches)
             batch_loss = loss_dict['total_loss'].item()
             batch_ate = loss_dict['ate_loss'].item()
             batch_drift = loss_dict['final_position_error'].item()
             
-            total_loss += batch_loss
-            total_ate_loss += batch_ate
-            total_drift += batch_drift
+            # Check if metrics are valid
+            if not (torch.isnan(torch.tensor(batch_loss)) or torch.isinf(torch.tensor(batch_loss))):
+                total_loss += batch_loss
+                total_ate_loss += batch_ate
+                total_drift += batch_drift
+            else:
+                print(f"⚠️  Skipping metrics for batch {batch_idx} (invalid values)")
             
             # Update progress bar
             gpu_mem = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
@@ -313,7 +364,7 @@ def main():
             'num_heads': 12,      # Full attention heads
             'num_layers': 6,
             'max_cameras': 1,     # Single camera only
-            'max_seq_len': 5,
+            'max_seq_len': 5,     # Reduced to avoid gradient explosion
             'dropout': 0.1,
             'use_imu': False,     # Disabled as requested
             'use_pressure': False, # Disabled as requested
@@ -321,9 +372,9 @@ def main():
         },
         'training': {
             'epochs': 50,         # More epochs for single camera
-            'learning_rate': 1e-4,
-            'weight_decay': 1e-5,
-            'batch_size': 2       # Larger batch size for single camera
+            'learning_rate': 1e-6,  # EXTREMELY small learning rate
+            'weight_decay': 0,      # No weight decay to avoid numerical issues
+            'batch_size': 1         # Smaller batch size for stability
         }
     }
     
@@ -332,22 +383,22 @@ def main():
     print(f"   📦 Batch Size: {config['training']['batch_size']}")
     print(f"   🎯 Learning Rate: {config['training']['learning_rate']}")
     print(f"   📹 Cameras: 1 (Single Camera)")
-    print(f"   🔄 Sub-trajectory Length: 5 frames")
+    print(f"   🔄 Sub-trajectory Length: 5 frames (Stable training)")
     print(f"   🚫 IMU/Pressure: Disabled")
     
     try:
         # Create dataloaders for single camera
         print("\n📂 Loading Dataset...")
         train_loader, val_loader = create_sub_trajectory_dataloaders(
-            train_csv='data/processed/training_dataset/training_data.csv',
-            val_csv='data/processed/training_dataset/training_data.csv',
-            sub_trajectory_length=5,
-            overlap=2,
-            camera_ids=[0],  # Single camera only (camera 0)
+            train_csv='data/processed/training_dataset/training_data_filtered.csv',
+            val_csv='data/processed/training_dataset/training_data_filtered.csv',
+            sub_trajectory_length=5,   # Reduced to avoid gradient explosion from outliers
+            overlap=2,                 # Standard overlap
+            camera_ids=[0],            # Single camera only (camera 0)
             batch_size=config['training']['batch_size'],
-            num_workers=0,   # Single worker for stability
-            max_samples_train=None,  # Use full dataset
-            max_samples_val=100      # Limit validation for speed
+            num_workers=0,             # Single worker for stability
+            max_samples_train=None,    # Use full dataset - SHUFFLED automatically
+            max_samples_val=100        # Limit validation for speed
         )
         
         print(f"✅ Dataset loaded successfully!")

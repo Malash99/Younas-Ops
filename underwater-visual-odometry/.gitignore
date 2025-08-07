@@ -1,12 +1,5 @@
-# Image data directories
-data/images/
-data/test_images/
-data/sequential_frames/images/
-
 # All image files
-*.jpg
-*.jpeg
-*.png
+data/*
 *.bmp
 *.tiff
 *.tif

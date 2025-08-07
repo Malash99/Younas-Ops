@@ -6,6 +6,42 @@ UW-TransVO is a state-of-the-art transformer-based architecture designed for und
 
 ## Architecture
 
+🔄 Epoch 1/50
+⏰ 01:32:25 | LR: 0.00001000
+🏋️  Epoch 1 Training:  26%|██▎      | 167/654 [04:47<15:18,  1.89s/it] , Loss=0.0053, ATE=0.0006, D rift=0.02m, GPU=1.0GB
+❌ NaN loss detected at batch 167! Stopping training.
+🔧 Try reducing learning rate or checking input data.
+🏋️  Epoch 1 Training:  26%|██▎      | 167/654 [04:48<14:02,  1.73s/it] , Loss=0.0053, ATE=0.0006, D rift=0.02m, GPU=1.0GB
+✅ Epoch 1 Validation: 100%|███████████████████| 100/100 [01:30<00:00,  1.11it/s] , Loss=0.0305, ATE=0.0057, Drift=0.17m
+
+📈 EPOCH 1 RESULTS:
+────────────────────────────────────────────────────────────
+⏱️  Time: 379.4s (Total: 6.3min)
+🏋️  TRAIN  | Loss: nan | ATE: nan | Drift: nanm
+✅ VAL    | Loss: 0.020914 | ATE: 0.003642 | Drift: 0.0958m
+📊 METRICS | Final Drift: 0.0958m | Relative: 51.75% | Trajectory: 0.13m
+⭐ NEW BEST MODEL SAVED! (single_camera_best_model.pth) | Loss: 0.020914
+────────────────────────────────────────────────────────────
+
+🔄 Epoch 2/50
+⏰ 01:38:45 | LR: 0.00000999
+🏋️  Epoch 2 Training:   5%|▍         | 31/654 [00:54<18:50,  1.81s/it] , Loss=0.0048, ATE=0.0006, D rift=0.07m, GPU=1.0GB
+❌ NaN loss detected at batch 31! Stopping training.
+🔧 Try reducing learning rate or checking input data.
+🏋️  Epoch 2 Training:   5%|▍         | 31/654 [00:55<18:34,  1.79s/it] , Loss=0.0048, ATE=0.0006, D rift=0.07m, GPU=1.0GB
+✅ Epoch 2 Validation: 100%|███████████████████| 100/100 [01:29<00:00,  1.11it/s] , Loss=0.0306, ATE=0.0058, Drift=0.16m
+
+📈 EPOCH 2 RESULTS:
+────────────────────────────────────────────────────────────
+⏱️  Time: 145.3s (Total: 8.8min)
+🏋️  TRAIN  | Loss: nan | ATE: nan | Drift: nanm
+✅ VAL    | Loss: 0.021083 | ATE: 0.003677 | Drift: 0.0983m
+📊 METRICS | Final Drift: 0.0983m | Relative: 52.49% | Trajectory: 0.13m
+────────────────────────────────────────────────────────────
+
+🔄 Epoch 3/50
+⏰ 01:41:11 | LR: 0.00000996
+🏋️  Epoch 3 Training:   2%|▏         | 12/654 [00:20<18:51,  1.76s/it] , Loss=0.0302, ATE=0.0057, D rift=0.21m, GPU=1.0GB
 ### Model Pipeline
 
 ```
