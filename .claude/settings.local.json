@@ -12,7 +12,9 @@
       "Bash(pip install:*)",
       "Bash(timeout 60 python:*)",
       "Bash(pip show:*)",
-      "Bash(nvidia-smi:*)"
+      "Bash(nvidia-smi:*)",
+      "Bash(mkdir:*)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   }

@@ -13,7 +13,8 @@
       "Bash(rosbag info:*)",
       "Bash(timeout 30 docker compose up -d)",
       "Bash(ls:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(touch:*)"
     ],
     "deny": []
   }

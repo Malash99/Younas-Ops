@@ -1,178 +1,154 @@
-#!/usr/bin/env python3
 """
-Test Fixed Model
-Check if the new model with proper learning rate produces variations
+Test the Fixed Anti-Collapse Model
+
+This script tests whether the fixed model produces varying frame-specific predictions
+instead of constant values across all frames.
 """
 
 import torch
-import torch.nn as nn
+import numpy as np
 import sys
 import os
-from pathlib import Path
-import numpy as np
-import pandas as pd
 
-sys.path.append(str(Path(__file__).parent))
+# Add project root to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from models.transformer import UWTransVO
-
-class FixedModel(nn.Module):
-    """Same model as used in fixed training"""
-    
-    def __init__(self, config):
-        super().__init__()
-        self.base_model = UWTransVO(**config)
-        
-    def forward(self, images, camera_ids, camera_mask, sub_traj_length):
-        batch_size, seq_len, num_cameras, C, H, W = images.shape
-        all_predictions = []
-        
-        for t in range(seq_len - 1):
-            frame_pair = torch.stack([images[:, t], images[:, t+1]], dim=1)
-            output = self.base_model(
-                images=frame_pair,
-                camera_ids=camera_ids,
-                camera_mask=camera_mask
-            )
-            all_predictions.append(output['pose'])
-        
-        predictions = torch.stack(all_predictions, dim=1)
-        return predictions
+from models.transformer.multiscale_uw_transvo import create_multiscale_model
 
 def test_fixed_model():
-    """Test if the fixed model produces variations instead of constants"""
+    """Test if the fixed model produces frame-specific outputs"""
+    
+    print("=" * 60)
+    print("TESTING FIXED ANTI-COLLAPSE MODEL")
+    print("=" * 60)
+    
+    # Model configuration (should match training)
+    config = {
+        'img_size': 192,
+        'd_model': 256,
+        'num_heads': 4,
+        'num_layers': 3,
+        'max_cameras': 1,
+        'max_seq_len': 10,
+        'dropout': 0.1,
+        'uncertainty_estimation': False
+    }
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = create_multiscale_model(config).to(device)
     
     # Load the fixed model
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_path = 'fixed_training_best_model.pth'
-    
+    model_path = 'fixed_anti_collapse_model.pth'
     if not os.path.exists(model_path):
-        print(f"Fixed model not found: {model_path}")
+        print(f"ERROR: Fixed model not found at {model_path}")
         return
     
-    print("TESTING FIXED MODEL")
-    print("=" * 50)
-    
-    checkpoint = torch.load(model_path, map_location=device)
-    config = checkpoint['config']['model']
-    model = FixedModel(config).to(device)
+    print(f"Loading fixed model from {model_path}")
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
     
-    print(f"Loaded fixed model from epoch {checkpoint['epoch']}")
-    print(f"Validation loss: {checkpoint['val_loss']:.8f}")
-    print()
+    print(f"Model loaded successfully! Validation loss during training: {checkpoint['val_loss']:.6f}")
     
-    # Load Bag 0 data
-    df = pd.read_csv('data/processed/training_dataset/training_data_filtered.csv')
-    bag0_data = df[df['bag_name'] == 'ariel_2023-12-21-14-24-42_0'].sort_values('timestamp').reset_index(drop=True)
+    # Test with different visual inputs
+    print(f"\\nTEST: Different images across sequence")
+    batch_size, seq_len = 1, 10
     
-    print("TESTING FIRST 30 PREDICTIONS:")
-    print("Frame   GT_X        GT_Y        GT_Z      |  PRED_X     PRED_Y     PRED_Z    | X_Error   Y_Error")
-    print("-" * 95)
+    # Create different images with significant visual differences
+    images = torch.randn(batch_size, seq_len, 1, 3, config['img_size'], config['img_size']).to(device)
+    # Add increasing intensity per frame to create visual differences
+    for i in range(seq_len):
+        images[:, i] = images[:, i] + i * 0.3
     
-    predictions = []
-    ground_truths = []
+    camera_ids = torch.zeros(batch_size, 1, dtype=torch.long).to(device)
     
     with torch.no_grad():
-        for i in range(min(30, len(bag0_data) - 3)):
-            try:
-                # Get window data
-                window_data = bag0_data.iloc[i:i+3]
-                
-                # Create dummy images
-                images_list = [torch.randn(3, 224, 224) * 0.1 for _ in range(3)]
-                images = torch.stack(images_list).unsqueeze(0).unsqueeze(2).to(device)
-                
-                camera_ids_batch = torch.tensor([[0]], device=device)
-                camera_mask = torch.tensor([[False]], device=device)
-                
-                # Forward pass
-                pred = model(images, camera_ids_batch, camera_mask, 3)
-                
-                if torch.isnan(pred).any():
-                    continue
-                
-                # Get first prediction from window
-                pred_delta = pred[0, 0].cpu().numpy()
-                gt_delta = np.array([
-                    window_data.iloc[1]['delta_x'], 
-                    window_data.iloc[1]['delta_y'], 
-                    window_data.iloc[1]['delta_z'],
-                    window_data.iloc[1]['delta_roll'], 
-                    window_data.iloc[1]['delta_pitch'], 
-                    window_data.iloc[1]['delta_yaw']
-                ])
-                
-                predictions.append(pred_delta)
-                ground_truths.append(gt_delta)
-                
-                # Print comparison
-                x_error = abs(pred_delta[0] - gt_delta[0])
-                y_error = abs(pred_delta[1] - gt_delta[1])
-                
-                print(f"{i:3d}   {gt_delta[0]:8.6f}  {gt_delta[1]:8.6f}  {gt_delta[2]:8.6f} | {pred_delta[0]:8.6f} {pred_delta[1]:8.6f} {pred_delta[2]:8.6f} | {x_error:.6f} {y_error:.6f}")
-                
-            except Exception as e:
-                continue
+        outputs = model(images=images, camera_ids=camera_ids)
+        pred_deltas = outputs['delta_poses'][0].cpu().numpy()  # [seq_len, 6]
     
-    if len(predictions) == 0:
-        print("No valid predictions!")
-        return
+    print(f"Input shape: {images.shape}")
+    print(f"Output shape: {pred_deltas.shape}")
+    print(f"\\nFrame-by-frame predictions:")
+    for i in range(seq_len):
+        print(f"  Frame {i}: X={pred_deltas[i, 0]:8.6f}, Y={pred_deltas[i, 1]:8.6f}, Z={pred_deltas[i, 2]:8.6f}")
     
-    predictions = np.array(predictions)
-    ground_truths = np.array(ground_truths)
+    # Analyze frame variation
+    frame_diffs = np.diff(pred_deltas, axis=0)
+    max_diff = np.abs(frame_diffs).max()
+    std_per_axis = np.std(pred_deltas, axis=0)
     
-    print()
-    print("COMPARISON: OLD vs FIXED MODEL")
-    print("=" * 50)
+    print(f"\\nVARIATION ANALYSIS:")
+    print(f"  Max difference between consecutive frames: {max_diff:.8f}")
+    print(f"  Standard deviation per axis: X={std_per_axis[0]:.6f}, Y={std_per_axis[1]:.6f}, Z={std_per_axis[2]:.6f}")
+    print(f"  Mean std across translation axes: {np.mean(std_per_axis[:3]):.6f}")
     
-    # Calculate variances
-    pred_x_var = predictions[:, 0].var()
-    pred_y_var = predictions[:, 1].var()
-    gt_x_var = ground_truths[:, 0].var()
-    gt_y_var = ground_truths[:, 1].var()
-    
-    print("VARIANCE ANALYSIS:")
-    print(f"  Ground Truth X variance: {gt_x_var:.8f}")
-    print(f"  Predicted X variance:    {pred_x_var:.8f}")
-    print(f"  Ground Truth Y variance: {gt_y_var:.8f}")
-    print(f"  Predicted Y variance:    {pred_y_var:.8f}")
-    print()
-    
-    # Compare with old model results
-    old_pred_x_var = 0.00000000  # From previous debug
-    old_pred_y_var = 0.00000000  # From previous debug
-    
-    print("IMPROVEMENT CHECK:")
-    x_improvement = pred_x_var / old_pred_x_var if old_pred_x_var > 1e-10 else float('inf')
-    y_improvement = pred_y_var / old_pred_y_var if old_pred_y_var > 1e-10 else float('inf')
-    
-    print(f"X Variance Improvement: {x_improvement:.1f}x better" if x_improvement != float('inf') else "X Variance: INFINITELY better (was constant)")
-    print(f"Y Variance Improvement: {y_improvement:.1f}x better" if y_improvement != float('inf') else "Y Variance: INFINITELY better (was constant)")
-    print()
-    
-    # Check if still constant
-    if pred_x_var < 1e-8 and pred_y_var < 1e-8:
-        print("RESULT: Model is STILL predicting constants!")
-        print("NEXT STEPS:")
-        print("  1. Learning rate may still be too small")
-        print("  2. Need stronger variation penalty in loss")
-        print("  3. May need more training epochs")
-        print("  4. Consider data normalization")
+    # Check if the model produces varying predictions
+    if max_diff > 1e-4:
+        print(f"\\nSUCCESS: Fixed model produces VARYING predictions!")
+        print(f"  The model now generates different predictions for different frames.")
+        if np.mean(std_per_axis[:3]) > 0.001:
+            print(f"  Good diversity: Mean translation std = {np.mean(std_per_axis[:3]):.6f}")
+        else:
+            print(f"  Low diversity: Mean translation std = {np.mean(std_per_axis[:3]):.6f}")
     else:
-        print("SUCCESS: Model is now learning variations!")
-        print("NEXT STEPS:")
-        print("  1. Test full trajectory prediction")
-        print("  2. Compare with previous straight-line results")
-        print("  3. Fine-tune for better accuracy")
+        print(f"\\nPROBLEM: Fixed model still produces CONSTANT predictions!")
+        print(f"  All frames have nearly identical outputs.")
+        
+    # Test trajectory shape
+    trajectory = np.cumsum(pred_deltas[:, :3], axis=0)
+    trajectory_length = np.sum(np.linalg.norm(np.diff(trajectory, axis=0), axis=1))
+    direct_distance = np.linalg.norm(trajectory[-1] - trajectory[0])
+    curvature_ratio = trajectory_length / (direct_distance + 1e-8)
     
-    # Calculate prediction statistics
-    print()
-    print("PREDICTION STATISTICS:")
-    print(f"X: mean={predictions[:, 0].mean():.6f}, std={predictions[:, 0].std():.6f}, range=[{predictions[:, 0].min():.6f}, {predictions[:, 0].max():.6f}]")
-    print(f"Y: mean={predictions[:, 1].mean():.6f}, std={predictions[:, 1].std():.6f}, range=[{predictions[:, 1].min():.6f}, {predictions[:, 1].max():.6f}]")
-    print(f"Z: mean={predictions[:, 2].mean():.6f}, std={predictions[:, 2].std():.6f}, range=[{predictions[:, 2].min():.6f}, {predictions[:, 2].max():.6f}]")
+    print(f"\\nTRAJECTORY ANALYSIS:")
+    print(f"  Start position: [{trajectory[0, 0]:8.6f}, {trajectory[0, 1]:8.6f}, {trajectory[0, 2]:8.6f}]")
+    print(f"  End position:   [{trajectory[-1, 0]:8.6f}, {trajectory[-1, 1]:8.6f}, {trajectory[-1, 2]:8.6f}]")
+    print(f"  Trajectory length: {trajectory_length:.6f}m")
+    print(f"  Direct distance:   {direct_distance:.6f}m")
+    print(f"  Curvature ratio:   {curvature_ratio:.4f}")
+    
+    if curvature_ratio > 1.05:
+        print(f"  CURVED trajectory detected!")
+    elif curvature_ratio > 1.01:
+        print(f"  ~ Slightly curved trajectory")
+    else:
+        print(f"  - Nearly straight trajectory")
+    
+    # Compare with old multiscale model if available
+    old_model_path = 'multiscale_light_best_model.pth'
+    if os.path.exists(old_model_path):
+        print(f"\\nCOMPARISON WITH OLD MODEL:")
+        print(f"Loading old model from {old_model_path}")
+        
+        old_checkpoint = torch.load(old_model_path, map_location=device, weights_only=False)
+        model.load_state_dict(old_checkpoint['model_state_dict'])
+        model.eval()
+        
+        with torch.no_grad():
+            old_outputs = model(images=images, camera_ids=camera_ids)
+            old_pred_deltas = old_outputs['delta_poses'][0].cpu().numpy()
+        
+        old_max_diff = np.abs(np.diff(old_pred_deltas, axis=0)).max()
+        old_std = np.mean(np.std(old_pred_deltas[:, :3], axis=0))
+        
+        print(f"  Old model max frame difference: {old_max_diff:.8f}")
+        print(f"  Old model mean std: {old_std:.8f}")
+        print(f"  New model max frame difference: {max_diff:.8f}")
+        print(f"  New model mean std: {np.mean(std_per_axis[:3]):.8f}")
+        
+        improvement_ratio = max_diff / (old_max_diff + 1e-10)
+        print(f"  Improvement ratio: {improvement_ratio:.2f}x")
+        
+        if improvement_ratio > 10:
+            print(f"  MAJOR IMPROVEMENT: New model is {improvement_ratio:.1f}x more diverse!")
+        elif improvement_ratio > 2:
+            print(f"  Good improvement: New model is {improvement_ratio:.1f}x more diverse")
+        else:
+            print(f"  - Limited improvement: Only {improvement_ratio:.1f}x more diverse")
+    
+    print(f"\\n" + "=" * 60)
+    print("FIXED MODEL TEST COMPLETE")
+    print("=" * 60)
 
 if __name__ == '__main__':
     test_fixed_model()
