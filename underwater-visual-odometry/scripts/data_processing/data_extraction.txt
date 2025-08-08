@@ -1,0 +1,75 @@
+🎯 Complete Professional Pipeline
+
+  Core Scripts Created:
+
+  1. extract_visual_odometry_dataset.py - Main extraction engine
+    - Coordinate frame transformation (World → Camera) ✅
+    - Multi-camera synchronization (5 cameras) ✅
+    - IMU data inclusion (accelerometer, gyroscope) ✅
+    - Barometer/pressure data ✅
+    - Thrust control data ✅
+    - Robust error handling and library fallbacks ✅
+  2. README.md - Comprehensive documentation
+    - Technical explanation of coordinate transformations
+    - Usage instructions and examples
+    - Dataset schema and column descriptions
+    - Research methodology documentation
+  3. run_extraction.sh - Professional automation script
+    - Dependency checking
+    - Parameter validation
+    - Progress monitoring
+    - Success verification
+  4. config.yaml - Professional configuration
+    - All ROS topics defined
+    - Processing parameters organized
+    - Quality control settings
+    - Research metadata
+
+  🔄 Key Technical Achievement: Coordinate Frame Transformation
+
+  The Critical Problem Solved:
+  # ❌ WRONG: Direct use of Qualisys world poses
+  world_delta = world_pose_t1 - world_pose_t0  # Wrong coordinate frame!
+
+  # ✅ CORRECT: Transform to camera coordinate frame
+  delta_camera = transform_world_to_camera(world_pose_t1, world_pose_t0)
+  # Result: [dx, dy, dz, droll, dpitch, dyaw] in camera frame
+
+  Why This Matters:
+  - Your model predicts motion in camera coordinates (X=right, Y=down, Z=forward)
+  - Qualisys gives poses in world coordinates (X=north, Y=east, Z=down)
+  - Without transformation, the model learns incorrect motion patterns
+  - Our pipeline ensures proper camera-relative learning
+
+  📊 Professional Dataset Output
+
+  The pipeline creates:
+  data/processed/visual_odometry_dataset/
+  ├── visual_odometry_dataset.csv          # Main training dataset
+  ├── dataset_statistics.json              # Comprehensive statistics
+  ├── images/
+  │   ├── cam0/ ... cam4/                  # 27,400+ synchronized images
+  ├── metadata/                            # Processing information
+  ├── ground_truth/                        # Trajectory data
+  └── sensor_data/                         # IMU, pressure, thrust data
+
+  🎯 Ready-to-Use Training Data
+
+  CSV Schema (key columns):
+  - delta_x, delta_y, delta_z - Translation deltas in camera frame
+  - delta_roll, delta_pitch, delta_yaw - Rotation deltas in camera frame
+  - cam0_path through cam4_path - Multi-camera image paths
+  - accel_x/y/z, gyro_x/y/z - IMU sensor data
+  - pressure - Depth/barometer readings
+  - thrust_ch0 through thrust_chN - Motor control commands
+
+  🚀 Usage
+
+  Simple extraction:
+  python scripts/data_processing/extract_visual_odometry_dataset.py
+
+  Custom parameters:
+  python scripts/data_processing/extract_visual_odometry_dataset.py \
+      --bag_dir data/raw \
+      --output_dir data/processed/my_dataset \
+      --csv_name my_visual_odometry_dataset.csv

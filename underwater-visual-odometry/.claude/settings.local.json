@@ -16,7 +16,11 @@
       "Bash(timeout:*)",
       "Bash(touch:*)",
       "Bash(dir \"C:\\Users\\Admin\\Desktop\\Masters Grinding\\bags_extracted\")",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:arxiv.org)"
     ],
     "deny": []
   }

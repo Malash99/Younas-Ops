@@ -1,0 +1,129 @@
+# Visual Odometry Dataset Extraction Configuration
+# Professional configuration for underwater visual odometry dataset generation
+
+# Data Sources
+data_sources:
+  bag_directory: "data/raw"
+  output_directory: "data/processed/visual_odometry_dataset"
+  
+# ROS Topics Configuration
+topics:
+  cameras:
+    - "/alphasense_driver_ros/cam0"
+    - "/alphasense_driver_ros/cam1" 
+    - "/alphasense_driver_ros/cam2"
+    - "/alphasense_driver_ros/cam3"
+    - "/alphasense_driver_ros/cam4"
+  
+  ground_truth:
+    primary: "/qualisys/ariel/pose"      # Primary ground truth source
+    secondary: "/qualisys/ariel/odom"    # Alternative with covariance
+  
+  imu:
+    primary: "/alphasense_driver_ros/imu"  # High-rate IMU
+    secondary: "/mavros/imu/data"          # Secondary IMU
+  
+  pressure:
+    - "/mavros/imu/static_pressure"
+  
+  thrust_control:
+    - "/mavros/rc/out"
+
+# Synchronization Parameters  
+synchronization:
+  reference_camera: 0              # Use cam0 as timing reference
+  max_time_difference: 0.1         # Maximum time diff for sync (seconds)
+  interpolation_method: "linear"   # linear, nearest, spline
+  
+# Image Processing
+image_processing:
+  format: "png"                    # Output image format
+  quality: 95                      # Compression quality (1-100)
+  preserve_original_size: true     # Keep original image dimensions
+  
+# Coordinate Frame Transformation
+coordinate_frames:
+  world_frame:
+    name: "qualisys_world"
+    description: "Qualisys motion capture coordinate system"
+    convention: "X=north, Y=east, Z=down"
+  
+  camera_frame:
+    name: "camera_optical"
+    description: "Standard computer vision coordinate system"  
+    convention: "X=right, Y=down, Z=forward"
+  
+  transform_ground_truth: true     # Transform poses to camera frame
+  compute_deltas: true             # Compute frame-to-frame deltas
+
+# Data Quality Control
+quality_control:
+  min_sequence_length: 10          # Minimum frames per sequence
+  max_delta_magnitude: 1.0         # Maximum reasonable delta (meters)
+  max_angular_delta: 0.5           # Maximum reasonable angular delta (rad)
+  outlier_detection: true          # Enable outlier detection
+  
+# Output Configuration
+output:
+  csv_filename: "visual_odometry_dataset.csv"
+  include_statistics: true
+  include_metadata: true
+  float_precision: 6               # Decimal places for floating point
+  
+# Professional Dataset Structure
+dataset_structure:
+  images:
+    subdirectories: ["cam0", "cam1", "cam2", "cam3", "cam4"]
+    naming_convention: "{bag_name}_{frame_id:06d}_cam{camera_id}_{timestamp:.6f}.png"
+  
+  metadata:
+    save_bag_info: true
+    save_topic_info: true
+    save_processing_log: true
+  
+  ground_truth:
+    save_world_frame: true         # Keep original world frame poses
+    save_camera_frame: true        # Save transformed camera frame poses
+    save_trajectories: true        # Save complete trajectories
+  
+# Performance Settings
+performance:
+  show_progress_bars: true
+  log_level: "INFO"               # DEBUG, INFO, WARNING, ERROR
+  max_memory_usage: "8GB"         # Maximum memory usage
+  parallel_processing: false      # Enable multiprocessing (experimental)
+
+# Research Metadata
+research:
+  dataset_name: "Underwater Visual Odometry Dataset"
+  version: "1.0"
+  description: "Multi-camera underwater visual odometry with ground truth from Qualisys motion capture"
+  authors: ["Underwater Visual Odometry Research Team"]
+  institution: "Research Institution"
+  date_created: "2025-01"
+  
+  equipment:
+    cameras: "5x Alphasense Event Cameras"
+    motion_capture: "Qualisys System"
+    platform: "Underwater ROV"
+    environment: "Controlled underwater environment"
+  
+  data_characteristics:
+    total_bags: 5
+    duration_per_bag: "~55 seconds"
+    frame_rate: "~20 FPS"
+    trajectory_complexity: "3D underwater navigation with depth changes"
+    
+# Validation Settings
+validation:
+  enable_data_validation: true
+  check_image_integrity: true
+  check_pose_continuity: true
+  check_timestamp_monotonicity: true
+  generate_validation_report: true
+
+# Backup and Safety
+backup:
+  create_backup: false            # Create backup of original data
+  verify_extraction: true         # Verify extracted data integrity
+  cleanup_temp_files: true        # Clean temporary files after processing
