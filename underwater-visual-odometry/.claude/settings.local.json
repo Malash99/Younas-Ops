@@ -14,7 +14,9 @@
       "Bash(timeout 30 docker compose up -d)",
       "Bash(ls:*)",
       "Bash(timeout:*)",
-      "Bash(touch:*)"
+      "Bash(touch:*)",
+      "Bash(dir \"C:\\Users\\Admin\\Desktop\\Masters Grinding\\bags_extracted\")",
+      "Bash(dir:*)"
     ],
     "deny": []
   }
