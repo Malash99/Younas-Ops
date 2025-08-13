@@ -136,7 +136,10 @@ class TSformerVO(nn.Module):
         images = image_sequence.view(-1, channels, height, width)  # (B*T, C, H, W)
         
         # Extract features from ViT
-        vit_outputs = self.vit(pixel_values=images, interpolate_pos_encoding=self.interpolate_pos_encoding)
+        if self.interpolate_pos_encoding:
+            vit_outputs = self.vit(pixel_values=images, interpolate_pos_encoding=True)
+        else:
+            vit_outputs = self.vit(pixel_values=images)
         spatial_features = vit_outputs.last_hidden_state[:, 0, :]  # Use CLS token (B*T, hidden_size)
         
         # Project features if needed

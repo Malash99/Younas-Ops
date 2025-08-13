@@ -414,7 +414,7 @@ def main():
                        help='Freeze ViT backbone parameters')
     
     # Training
-    parser.add_argument('--batch_size', type=int, default=8,
+    parser.add_argument('--batch_size', type=int, default=2,
                        help='Batch size')
     parser.add_argument('--num_epochs', type=int, default=50,
                        help='Number of epochs')
