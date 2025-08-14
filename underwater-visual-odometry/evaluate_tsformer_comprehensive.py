@@ -45,7 +45,8 @@ class TSformerEvaluator:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Create output directory
-        self.output_dir = Path("evaluation_results_comprehensive")
+        experiment_name = Path(self.model_path).parent.name
+        self.output_dir = Path(f"evaluation_results_{experiment_name}")
         self.output_dir.mkdir(exist_ok=True)
         
         print(f"Using device: {self.device}")
@@ -443,14 +444,14 @@ def main():
     config = {
         'csv_path': 'data/processed/visual_odometry_dataset/visual_odometry_dataset_kalibr.csv',
         'data_root': 'data/processed/visual_odometry_dataset',
-        'sequence_length': 8,
-        'overlap_frames': 4,
+        'sequence_length': 3,
+        'overlap_frames': 1,
         'image_size': 224,
         'test_bags': ['ariel_2023-12-21-14-28-22_4']
     }
     
     # Find the best model checkpoint
-    checkpoint_dir = Path('experiments/tsformer_vo')
+    checkpoint_dir = Path('experiments/2_TSFormer_seq3_frozen_balanced_loss_consistency')
     best_model_path = checkpoint_dir / 'checkpoint_best.pth'
     latest_model_path = checkpoint_dir / 'checkpoint_latest.pth'
     

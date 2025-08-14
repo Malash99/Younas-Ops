@@ -208,11 +208,11 @@ class UnderwaterVODataset(Dataset):
         ]
         
         if augment:
-            # Add augmentations for training
+            # Add minimal augmentations for training (removed harmful ones)
             augment_transforms = [
-                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-                transforms.RandomHorizontalFlip(p=0.5),
-                transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+                transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
+                # Removed RandomHorizontalFlip (changes motion direction)
+                # Removed GaussianBlur (removes important edge features)
             ]
             transforms_list = augment_transforms + transforms_list
         

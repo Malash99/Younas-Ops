@@ -179,19 +179,20 @@ class TSformerVO(nn.Module):
 
 class TSformerVOLoss(nn.Module):
     """
-    Combined loss function for TSformer-VO training.
+    Improved loss function for TSformer-VO training.
     
-    Combines translation and rotation losses with appropriate weighting.
+    Combines translation, rotation, and trajectory consistency losses.
     """
     
-    def __init__(self, trans_weight=1.0, rot_weight=100.0):
+    def __init__(self, trans_weight=1.0, rot_weight=1.0, consistency_weight=0.5):
         super().__init__()
         self.trans_weight = trans_weight
         self.rot_weight = rot_weight
+        self.consistency_weight = consistency_weight
         
     def forward(self, pred_poses, gt_poses):
         """
-        Compute combined pose loss.
+        Compute improved pose loss with trajectory consistency.
         
         Args:
             pred_poses: (batch_size, 6) - predicted [dx,dy,dz,droll,dpitch,dyaw]
@@ -208,27 +209,42 @@ class TSformerVOLoss(nn.Module):
         gt_trans = gt_poses[:, :3]      # [dx, dy, dz]
         gt_rot = gt_poses[:, 3:]        # [droll, dpitch, dyaw]
         
-        # Translation loss (L1 + L2)
-        trans_l1 = F.l1_loss(pred_trans, gt_trans)
-        trans_l2 = F.mse_loss(pred_trans, gt_trans)
-        trans_loss = trans_l1 + trans_l2
+        # Basic pose losses (MSE only, more stable than L1+L2)
+        trans_loss = F.mse_loss(pred_trans, gt_trans)
+        rot_loss = F.mse_loss(pred_rot, gt_rot)
         
-        # Rotation loss (L1 + L2)
-        rot_l1 = F.l1_loss(pred_rot, gt_rot)
-        rot_l2 = F.mse_loss(pred_rot, gt_rot)
-        rot_loss = rot_l1 + rot_l2
+        # Scale-aware loss: normalize by ground truth std to give equal importance to all axes
+        gt_trans_std = torch.std(gt_trans, dim=0, keepdim=True) + 1e-8
+        gt_rot_std = torch.std(gt_rot, dim=0, keepdim=True) + 1e-8
         
-        # Combined loss
-        total_loss = self.trans_weight * trans_loss + self.rot_weight * rot_loss
+        trans_loss_normalized = F.mse_loss(pred_trans / gt_trans_std, gt_trans / gt_trans_std)
+        rot_loss_normalized = F.mse_loss(pred_rot / gt_rot_std, gt_rot / gt_rot_std)
+        
+        # Trajectory consistency loss (only for batch size > 2)
+        consistency_loss = torch.tensor(0.0, device=pred_poses.device)
+        if pred_poses.shape[0] > 2:
+            # Compute cumulative trajectories
+            pred_trajectory = torch.cumsum(pred_trans, dim=0)
+            gt_trajectory = torch.cumsum(gt_trans, dim=0)
+            
+            # Second derivative (curvature) to penalize straight lines
+            if pred_poses.shape[0] > 2:
+                pred_curvature = pred_trajectory[2:] - 2*pred_trajectory[1:-1] + pred_trajectory[:-2]
+                gt_curvature = gt_trajectory[2:] - 2*gt_trajectory[1:-1] + gt_trajectory[:-2]
+                consistency_loss = F.mse_loss(pred_curvature, gt_curvature)
+        
+        # Combined loss with balanced weights
+        total_loss = (self.trans_weight * trans_loss_normalized + 
+                     self.rot_weight * rot_loss_normalized + 
+                     self.consistency_weight * consistency_loss)
         
         loss_dict = {
             'total_loss': total_loss.item(),
             'trans_loss': trans_loss.item(),
             'rot_loss': rot_loss.item(),
-            'trans_l1': trans_l1.item(),
-            'trans_l2': trans_l2.item(),
-            'rot_l1': rot_l1.item(),
-            'rot_l2': rot_l2.item()
+            'trans_loss_norm': trans_loss_normalized.item(),
+            'rot_loss_norm': rot_loss_normalized.item(),
+            'consistency_loss': consistency_loss.item()
         }
         
         return total_loss, loss_dict
@@ -270,7 +286,7 @@ def create_tsformer_vo(sequence_length=8, pretrained=True, freeze_backbone=False
         image_size=image_size
     )
     
-    loss_fn = TSformerVOLoss(trans_weight=1.0, rot_weight=100.0)
+    loss_fn = TSformerVOLoss(trans_weight=1.0, rot_weight=1.0, consistency_weight=0.5)
     
     return model, loss_fn
 

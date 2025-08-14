@@ -400,9 +400,9 @@ def main():
                        help='Bags to reserve for testing')
     
     # Model
-    parser.add_argument('--sequence_length', type=int, default=8,
+    parser.add_argument('--sequence_length', type=int, default=3,
                        help='Number of frames per sequence')
-    parser.add_argument('--overlap_frames', type=int, default=4,
+    parser.add_argument('--overlap_frames', type=int, default=1,
                        help='Frame overlap between windows')
     parser.add_argument('--image_size', type=int, default=224,
                        help='Input image size')
@@ -410,11 +410,11 @@ def main():
                        help='Which camera to use')
     parser.add_argument('--pretrained', action='store_true', default=True,
                        help='Use pretrained ViT backbone')
-    parser.add_argument('--freeze_backbone', action='store_true',
+    parser.add_argument('--freeze_backbone', action='store_true', default=True,
                        help='Freeze ViT backbone parameters')
     
     # Training
-    parser.add_argument('--batch_size', type=int, default=2,
+    parser.add_argument('--batch_size', type=int, default=4,
                        help='Batch size')
     parser.add_argument('--num_epochs', type=int, default=50,
                        help='Number of epochs')
@@ -424,7 +424,7 @@ def main():
                        help='Weight decay')
     parser.add_argument('--num_workers', type=int, default=4,
                        help='Number of dataloader workers')
-    parser.add_argument('--accumulate_steps', type=int, default=1,
+    parser.add_argument('--accumulate_steps', type=int, default=2,
                        help='Gradient accumulation steps for larger effective batch size')
     
     # Logging
