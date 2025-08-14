@@ -155,7 +155,8 @@ class UnderwaterVODataset(Dataset):
                         'bag_name': bag_name,
                         'start_idx': i,
                         'window_data': window_data,
-                        'target_pose': self._extract_pose(window_data.iloc[-1])  # Predict pose of last frame
+                        'target_pose': self._extract_pose(window_data.iloc[-1]),  # Single frame delta
+                        'relative_pose': self._extract_relative_pose(window_data)  # NEW: Full sequence relative pose
                     })
         
         # Shuffle windows for training (but keep temporal order within each window)
@@ -196,6 +197,61 @@ class UnderwaterVODataset(Dataset):
             frame_row['delta_pitch'],
             frame_row['delta_yaw']
         ], dtype=np.float32)
+        
+        return pose
+    
+    def _extract_relative_pose(self, window_data):
+        """Extract relative pose from first to last frame of sequence."""
+        # Accumulate deltas using SE(3) composition
+        accumulated_T = np.eye(4)
+        
+        for _, frame in window_data.iterrows():
+            # Extract delta
+            delta = np.array([
+                frame['delta_x'], frame['delta_y'], frame['delta_z'],
+                frame['delta_roll'], frame['delta_pitch'], frame['delta_yaw']
+            ])
+            
+            # Convert to SE(3) matrix
+            delta_T = self._pose_to_se3_matrix(delta)
+            
+            # Compose: T_new = T_current @ T_delta
+            accumulated_T = accumulated_T @ delta_T
+        
+        # Convert back to 6DOF representation
+        relative_pose = self._se3_matrix_to_pose(accumulated_T)
+        
+        return relative_pose.astype(np.float32)
+    
+    def _pose_to_se3_matrix(self, pose):
+        """Convert 6DOF pose to SE(3) transformation matrix."""
+        translation = pose[:3]
+        rotation = pose[3:]  # Euler angles
+        
+        # Convert Euler to rotation matrix
+        from scipy.spatial.transform import Rotation as R
+        rot_matrix = R.from_euler('xyz', rotation).as_matrix()
+        
+        # Create SE(3) matrix
+        T = np.eye(4)
+        T[:3, :3] = rot_matrix
+        T[:3, 3] = translation
+        
+        return T
+    
+    def _se3_matrix_to_pose(self, T):
+        """Convert SE(3) transformation matrix to 6DOF pose."""
+        from scipy.spatial.transform import Rotation as R
+        
+        # Extract translation
+        translation = T[:3, 3]
+        
+        # Extract rotation and convert to Euler angles
+        rotation_matrix = T[:3, :3]
+        rotation = R.from_matrix(rotation_matrix).as_euler('xyz')
+        
+        # Combine into 6DOF pose
+        pose = np.concatenate([translation, rotation])
         
         return pose
     
@@ -242,6 +298,7 @@ class UnderwaterVODataset(Dataset):
         window = self.windows[idx]
         window_data = window['window_data']
         target_pose = window['target_pose']
+        relative_pose = window['relative_pose']  # NEW: Full sequence relative pose
         
         # Load image sequence
         images = []
@@ -254,12 +311,14 @@ class UnderwaterVODataset(Dataset):
         # Stack images into sequence tensor
         image_sequence = torch.stack(images, dim=0)  # (seq_len, 3, H, W)
         
-        # Convert pose to tensor
+        # Convert poses to tensors
         pose_tensor = torch.from_numpy(target_pose).float()
+        relative_pose_tensor = torch.from_numpy(relative_pose).float()
         
         return {
             'images': image_sequence,
-            'poses': pose_tensor,
+            'poses': pose_tensor,               # Single frame delta (for local loss)
+            'relative_poses': relative_pose_tensor,  # Full sequence relative pose (for multi-step loss)
             'bag_name': window['bag_name'],
             'frame_indices': window_data['frame_index'].tolist(),
             'timestamps': window_data['timestamp'].tolist()
