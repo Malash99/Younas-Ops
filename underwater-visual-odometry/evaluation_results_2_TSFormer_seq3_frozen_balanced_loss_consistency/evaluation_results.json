@@ -1,0 +1,79 @@
+{
+  "training": {
+    "metrics": {
+      "translation": {
+        "mse": "0.0001779474",
+        "rmse": "0.013339693",
+        "mae": "0.008850278",
+        "std": "0.00998098",
+        "max": "0.1213576",
+        "median": "0.0057118703"
+      },
+      "rotation": {
+        "mse": "0.00033930494",
+        "rmse": "0.018420232",
+        "mae": "0.013429592",
+        "std": "0.012607576",
+        "max": "0.102882154",
+        "median": "0.009446664"
+      }
+    },
+    "num_samples": 1278
+  },
+  "validation": {
+    "metrics": {
+      "translation": {
+        "mse": "5.0114533e-05",
+        "rmse": "0.0070791617",
+        "mae": "0.0053363494",
+        "std": "0.0046516564",
+        "max": "0.06412061",
+        "median": "0.0043597287"
+      },
+      "rotation": {
+        "mse": "0.00012809457",
+        "rmse": "0.011317887",
+        "mae": "0.008702254",
+        "std": "0.0072363894",
+        "max": "0.047629856",
+        "median": "0.006581297"
+      }
+    },
+    "num_samples": 350
+  },
+  "test": {
+    "metrics": {
+      "translation": {
+        "mse": "0.0001572452",
+        "rmse": "0.012539745",
+        "mae": "0.009809954",
+        "std": "0.0078108916",
+        "max": "0.06278995",
+        "median": "0.0076653194"
+      },
+      "rotation": {
+        "mse": "0.0004924137",
+        "rmse": "0.022190396",
+        "mae": "0.016488055",
+        "std": "0.0148511855",
+        "max": "0.18575582",
+        "median": "0.012317376"
+      }
+    },
+    "num_samples": 417
+  },
+  "evaluation_info": {
+    "model_path": "experiments\\2_TSFormer_seq3_frozen_balanced_loss_consistency\\checkpoint_best.pth",
+    "evaluation_date": "2025-08-14T04:19:46.807378",
+    "config": {
+      "csv_path": "data/processed/visual_odometry_dataset/visual_odometry_dataset_kalibr.csv",
+      "data_root": "data/processed/visual_odometry_dataset",
+      "sequence_length": 3,
+      "overlap_frames": 1,
+      "image_size": 224,
+      "test_bags": [
+        "ariel_2023-12-21-14-28-22_4"
+      ]
+    }
+  }
+}

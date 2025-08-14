@@ -114,11 +114,12 @@ class TSformerEvaluator:
         return data_loaders
         
     def evaluate_dataset(self, data_loader, dataset_name):
-        """Evaluate model on a dataset and return predictions"""
+        """Evaluate model on a dataset and return predictions with true world coordinates"""
         print(f"\\nEvaluating on {dataset_name} dataset...")
         
         predictions = []
-        ground_truths = []
+        ground_truth_deltas = []
+        true_world_coords = []
         metadata = []
         
         self.model.eval()
@@ -136,25 +137,56 @@ class TSformerEvaluator:
                 
                 # Store results
                 predictions.append(pred_poses.cpu().numpy())
-                ground_truths.append(poses.cpu().numpy())
+                ground_truth_deltas.append(poses.cpu().numpy())
+                
+                # Get true world coordinates for this batch
+                bag_name = batch['bag_name'][0]
+                frame_indices = batch['frame_indices'][0]
+                
+                # Load world coordinates from dataset
+                world_coords = self._get_world_coordinates(bag_name, frame_indices)
+                true_world_coords.append(world_coords)
                 
                 # Store metadata
                 metadata.append({
-                    'bag_name': batch['bag_name'][0],
-                    'frame_indices': batch['frame_indices'][0],
+                    'bag_name': bag_name,
+                    'frame_indices': frame_indices,
                     'timestamps': batch['timestamps'][0]
                 })
                 
         # Concatenate results
         predictions = np.concatenate(predictions, axis=0)  # (N, 6)
-        ground_truths = np.concatenate(ground_truths, axis=0)  # (N, 6)
+        ground_truth_deltas = np.concatenate(ground_truth_deltas, axis=0)  # (N, 6)
+        true_world_coords = np.concatenate(true_world_coords, axis=0)  # (N, 3)
         
         print(f"  Collected {len(predictions)} predictions")
         
-        return predictions, ground_truths, metadata
+        return predictions, ground_truth_deltas, true_world_coords, metadata
+    
+    def _get_world_coordinates(self, bag_name, frame_indices):
+        """Get true world coordinates for given frames"""
+        import pandas as pd
+        
+        # Load the dataset
+        df = pd.read_csv(self.config['csv_path'])
+        
+        # Get the specific frames
+        world_coords = []
+        for frame_idx in frame_indices:
+            frame_data = df[(df['bag_name'] == bag_name) & (df['frame_index'] == frame_idx)]
+            if len(frame_data) > 0:
+                row = frame_data.iloc[0]
+                # Use the last frame's world coordinates (since we predict the last frame's pose)
+                world_coords.append([row['world_x'], row['world_y'], row['world_z']])
+            else:
+                # Fallback to NaN if no data
+                world_coords.append([np.nan, np.nan, np.nan])
+        
+        # Return the last frame's coordinates (what we're predicting)
+        return np.array([world_coords[-1]])
         
     def compute_trajectory_from_deltas(self, deltas, initial_pose=None):
-        """Compute absolute trajectory from pose deltas"""
+        """Compute absolute trajectory from pose deltas using proper SE(3) transformations"""
         if initial_pose is None:
             initial_pose = np.zeros(6)  # [x, y, z, roll, pitch, yaw]
             
@@ -162,13 +194,86 @@ class TSformerEvaluator:
         current_pose = initial_pose.copy()
         
         for delta in deltas:
-            # Update translation
-            current_pose[:3] += delta[:3]
-            # Update rotation (simple addition for small angles)
-            current_pose[3:] += delta[3:]
+            # Convert current pose to transformation matrix
+            current_T = self.pose_to_transformation_matrix(current_pose)
+            
+            # Convert delta to transformation matrix
+            delta_T = self.pose_to_transformation_matrix(delta)
+            
+            # Apply transformation: T_new = T_current * T_delta
+            new_T = current_T @ delta_T
+            
+            # Extract pose from transformation matrix
+            current_pose = self.transformation_matrix_to_pose(new_T)
             trajectory.append(current_pose.copy())
             
         return np.array(trajectory)
+    
+    def pose_to_transformation_matrix(self, pose):
+        """Convert [x,y,z,roll,pitch,yaw] to 4x4 transformation matrix"""
+        x, y, z, roll, pitch, yaw = pose
+        
+        # Rotation matrices
+        R_x = np.array([[1, 0, 0],
+                       [0, np.cos(roll), -np.sin(roll)],
+                       [0, np.sin(roll), np.cos(roll)]])
+        
+        R_y = np.array([[np.cos(pitch), 0, np.sin(pitch)],
+                       [0, 1, 0],
+                       [-np.sin(pitch), 0, np.cos(pitch)]])
+        
+        R_z = np.array([[np.cos(yaw), -np.sin(yaw), 0],
+                       [np.sin(yaw), np.cos(yaw), 0],
+                       [0, 0, 1]])
+        
+        # Combined rotation: R = R_z * R_y * R_x
+        R = R_z @ R_y @ R_x
+        
+        # Create transformation matrix
+        T = np.eye(4)
+        T[:3, :3] = R
+        T[:3, 3] = [x, y, z]
+        
+        return T
+    
+    def transformation_matrix_to_pose(self, T):
+        """Convert 4x4 transformation matrix to [x,y,z,roll,pitch,yaw]"""
+        # Extract translation
+        x, y, z = T[:3, 3]
+        
+        # Extract rotation matrix
+        R = T[:3, :3]
+        
+        # Convert rotation matrix to Euler angles (roll, pitch, yaw)
+        # Using ZYX convention
+        pitch = np.arcsin(-R[2, 0])
+        
+        if np.cos(pitch) > 1e-6:
+            roll = np.arctan2(R[2, 1], R[2, 2])
+            yaw = np.arctan2(R[1, 0], R[0, 0])
+        else:
+            # Gimbal lock case
+            roll = np.arctan2(-R[1, 2], R[1, 1])
+            yaw = 0
+        
+        return np.array([x, y, z, roll, pitch, yaw])
+    
+    def compute_true_trajectory(self, world_coords):
+        """Convert true world coordinates to trajectory format"""
+        # Remove NaN values
+        valid_mask = ~np.isnan(world_coords).any(axis=1)
+        valid_coords = world_coords[valid_mask]
+        
+        if len(valid_coords) == 0:
+            print("Warning: No valid world coordinates found!")
+            return np.zeros((1, 6))  # Return dummy trajectory
+        
+        # Create trajectory with world coordinates (x, y, z) and zero rotations
+        trajectory = np.zeros((len(valid_coords), 6))
+        trajectory[:, :3] = valid_coords  # Set x, y, z
+        # Leave rotations as zero since we don't have world rotations
+        
+        return trajectory
         
     def compute_metrics(self, predictions, ground_truths):
         """Compute evaluation metrics"""
@@ -223,7 +328,7 @@ class TSformerEvaluator:
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
         ax.set_zlabel('Z (m)')
-        ax.set_title(f'3D Trajectory - {dataset_name} Dataset\\nTSformer Visual Odometry')
+        ax.set_title(f'3D Global Trajectory - {dataset_name} Dataset\\nTSformer Visual Odometry (Absolute Coordinates)')
         ax.legend()
         ax.grid(True, alpha=0.3)
         
@@ -273,7 +378,7 @@ class TSformerEvaluator:
         axes[2].legend()
         axes[2].axis('equal')
         
-        plt.suptitle(f'2D Trajectory Projections - {dataset_name} Dataset\\nTSformer Visual Odometry', fontsize=14)
+        plt.suptitle(f'2D Global Trajectory Projections - {dataset_name} Dataset\\nTSformer Visual Odometry (Absolute Coordinates)', fontsize=14)
         plt.tight_layout()
         plt.savefig(self.output_dir / f'2d_projections_{dataset_name.lower()}.png', 
                    dpi=300, bbox_inches='tight')
@@ -385,10 +490,10 @@ class TSformerEvaluator:
             print(f"{'-'*50}")
             
             # Get predictions
-            predictions, ground_truths, metadata = self.evaluate_dataset(data_loader, dataset_name)
+            predictions, ground_truth_deltas, true_world_coords, metadata = self.evaluate_dataset(data_loader, dataset_name)
             
-            # Compute metrics
-            metrics = self.compute_metrics(predictions, ground_truths)
+            # Compute metrics (still using deltas for model performance)
+            metrics = self.compute_metrics(predictions, ground_truth_deltas)
             results[dataset_name.lower()] = {
                 'metrics': metrics,
                 'num_samples': len(predictions)
@@ -402,8 +507,11 @@ class TSformerEvaluator:
             print(f"  Rotation MAE:     {metrics['rotation']['mae']:.6f} rad")
             
             # Compute trajectories
+            # For predictions: accumulate deltas from predicted poses
             pred_trajectory = self.compute_trajectory_from_deltas(predictions)
-            gt_trajectory = self.compute_trajectory_from_deltas(ground_truths)
+            
+            # For ground truth: use TRUE world coordinates (no accumulation!)
+            gt_trajectory = self.compute_true_trajectory(true_world_coords)
             
             # Create visualizations
             print(f"Creating visualizations for {dataset_name} dataset...")
@@ -420,7 +528,7 @@ class TSformerEvaluator:
             # Error distributions
             self.plot_error_distributions(predictions, ground_truths, dataset_name)
             
-            print(f"✅ {dataset_name} evaluation completed!")
+            print(f"[COMPLETED] {dataset_name} evaluation completed!")
             
         # Save results
         results['evaluation_info'] = {
