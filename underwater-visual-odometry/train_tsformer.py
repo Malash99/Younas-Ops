@@ -126,7 +126,11 @@ class TSformerTrainer:
         """Train for one epoch."""
         self.model.train()
         epoch_losses = []
-        epoch_metrics = {'trans_loss': [], 'rot_loss': []}
+        # Handle both old and new loss component names
+        if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+            epoch_metrics = {'single_step_loss': [], 'multi_step_loss': [], 'chain_consistency_loss': []}
+        else:  # Original loss
+            epoch_metrics = {'geodesic_loss': [], 'consistency_loss': [], 'magnitude_loss': []}
         
         # Gradient accumulation for effective larger batch size
         accumulate_steps = self.config.get('accumulate_steps', 1)
@@ -134,7 +138,13 @@ class TSformerTrainer:
         for batch_idx, batch in enumerate(self.train_loader):
             # Move data to device
             images = batch['images'].to(self.device)  # (B, T, C, H, W)
-            poses = batch['poses'].to(self.device)    # (B, 6)
+            poses = batch['poses'].to(self.device)    # (B, 6) - single frame deltas
+            
+            # Check if we have relative poses (for multi-scale loss)
+            if 'relative_poses' in batch:
+                relative_poses = batch['relative_poses'].to(self.device)  # (B, 6) - full sequence relative pose
+            else:
+                relative_poses = poses  # Fallback to single frame poses
             
             # Forward pass
             if batch_idx % accumulate_steps == 0:
@@ -142,8 +152,11 @@ class TSformerTrainer:
                 
             pred_poses = self.model(images)
             
-            # Calculate loss
-            loss, loss_dict = self.loss_fn(pred_poses, poses)
+            # Calculate loss (check if multi-scale loss)
+            if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+                loss, loss_dict = self.loss_fn(pred_poses, poses, relative_poses)
+            else:  # Original loss
+                loss, loss_dict = self.loss_fn(pred_poses, poses)
             loss = loss / accumulate_steps  # Scale loss for accumulation
             
             # Backward pass
@@ -160,33 +173,63 @@ class TSformerTrainer:
             
             # Track metrics
             epoch_losses.append(loss_dict['total_loss'])
-            epoch_metrics['trans_loss'].append(loss_dict['trans_loss'])
-            epoch_metrics['rot_loss'].append(loss_dict['rot_loss'])
+            
+            # Handle different loss component names
+            if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+                epoch_metrics['single_step_loss'].append(loss_dict['single_step_loss'])
+                epoch_metrics['multi_step_loss'].append(loss_dict['multi_step_loss'])
+                epoch_metrics['chain_consistency_loss'].append(loss_dict['chain_consistency_loss'])
+            else:  # Original loss
+                epoch_metrics['geodesic_loss'].append(loss_dict['geodesic_loss'])
+                epoch_metrics['consistency_loss'].append(loss_dict['consistency_loss'])
+                epoch_metrics['magnitude_loss'].append(loss_dict['magnitude_loss'])
             
             # Log batch metrics
             if batch_idx % self.config['log_interval'] == 0:
-                print(f"Epoch {self.current_epoch}, Batch {batch_idx}/{len(self.train_loader)}: "
-                      f"Loss={loss_dict['total_loss']:.6f}, Trans={loss_dict['trans_loss']:.6f}, "
-                      f"Rot={loss_dict['rot_loss']:.6f}")
-                
-                # Tensorboard logging
                 step = self.current_epoch * len(self.train_loader) + batch_idx
                 self.writer.add_scalar('Train/BatchLoss', loss_dict['total_loss'], step)
-                self.writer.add_scalar('Train/TransLoss', loss_dict['trans_loss'], step)
-                self.writer.add_scalar('Train/RotLoss', loss_dict['rot_loss'], step)
+                
+                # Handle different loss types for logging
+                if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+                    print(f"Epoch {self.current_epoch}, Batch {batch_idx}/{len(self.train_loader)}: "
+                          f"Loss={loss_dict['total_loss']:.6f}, SingleStep={loss_dict['single_step_loss']:.6f}, "
+                          f"MultiStep={loss_dict['multi_step_loss']:.6f}, Chain={loss_dict['chain_consistency_loss']:.6f}")
+                    
+                    self.writer.add_scalar('Train/SingleStepLoss', loss_dict['single_step_loss'], step)
+                    self.writer.add_scalar('Train/MultiStepLoss', loss_dict['multi_step_loss'], step)
+                    self.writer.add_scalar('Train/ChainLoss', loss_dict['chain_consistency_loss'], step)
+                else:  # Original loss
+                    print(f"Epoch {self.current_epoch}, Batch {batch_idx}/{len(self.train_loader)}: "
+                          f"Loss={loss_dict['total_loss']:.6f}, Geodesic={loss_dict['geodesic_loss']:.6f}, "
+                          f"Consistency={loss_dict['consistency_loss']:.6f}, Magnitude={loss_dict['magnitude_loss']:.6f}")
+                    
+                    self.writer.add_scalar('Train/GeodesicLoss', loss_dict['geodesic_loss'], step)
+                    self.writer.add_scalar('Train/ConsistencyLoss', loss_dict['consistency_loss'], step)
+                    self.writer.add_scalar('Train/MagnitudeLoss', loss_dict['magnitude_loss'], step)
         
         # Calculate epoch averages
         avg_loss = np.mean(epoch_losses)
-        avg_trans_loss = np.mean(epoch_metrics['trans_loss'])
-        avg_rot_loss = np.mean(epoch_metrics['rot_loss'])
         
-        return avg_loss, avg_trans_loss, avg_rot_loss
+        if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+            avg_comp1 = np.mean(epoch_metrics['single_step_loss'])
+            avg_comp2 = np.mean(epoch_metrics['multi_step_loss'])
+            avg_comp3 = np.mean(epoch_metrics['chain_consistency_loss'])
+        else:  # Original loss
+            avg_comp1 = np.mean(epoch_metrics['geodesic_loss'])
+            avg_comp2 = np.mean(epoch_metrics['consistency_loss'])
+            avg_comp3 = np.mean(epoch_metrics['magnitude_loss'])
+        
+        return avg_loss, avg_comp1, avg_comp2, avg_comp3
     
     def validate_epoch(self):
         """Validate for one epoch."""
         self.model.eval()
         val_losses = []
-        val_metrics = {'trans_loss': [], 'rot_loss': []}
+        # Handle both old and new loss component names
+        if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+            val_metrics = {'single_step_loss': [], 'multi_step_loss': [], 'chain_consistency_loss': []}
+        else:  # Original loss
+            val_metrics = {'geodesic_loss': [], 'consistency_loss': [], 'magnitude_loss': []}
         
         with torch.no_grad():
             for batch in self.val_loader:
@@ -194,21 +237,47 @@ class TSformerTrainer:
                 images = batch['images'].to(self.device)
                 poses = batch['poses'].to(self.device)
                 
+                # Check if we have relative poses (for multi-scale loss)
+                if 'relative_poses' in batch:
+                    relative_poses = batch['relative_poses'].to(self.device)
+                else:
+                    relative_poses = poses
+                
                 # Forward pass
                 pred_poses = self.model(images)
-                loss, loss_dict = self.loss_fn(pred_poses, poses)
+                
+                # Calculate loss (check if multi-scale loss)
+                if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+                    loss, loss_dict = self.loss_fn(pred_poses, poses, relative_poses)
+                else:  # Original loss
+                    loss, loss_dict = self.loss_fn(pred_poses, poses)
                 
                 # Track metrics
                 val_losses.append(loss_dict['total_loss'])
-                val_metrics['trans_loss'].append(loss_dict['trans_loss'])
-                val_metrics['rot_loss'].append(loss_dict['rot_loss'])
+                
+                # Handle different loss component names
+                if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+                    val_metrics['single_step_loss'].append(loss_dict['single_step_loss'])
+                    val_metrics['multi_step_loss'].append(loss_dict['multi_step_loss'])
+                    val_metrics['chain_consistency_loss'].append(loss_dict['chain_consistency_loss'])
+                else:  # Original loss
+                    val_metrics['geodesic_loss'].append(loss_dict['geodesic_loss'])
+                    val_metrics['consistency_loss'].append(loss_dict['consistency_loss'])
+                    val_metrics['magnitude_loss'].append(loss_dict['magnitude_loss'])
         
         # Calculate averages
         avg_val_loss = np.mean(val_losses)
-        avg_trans_loss = np.mean(val_metrics['trans_loss'])
-        avg_rot_loss = np.mean(val_metrics['rot_loss'])
         
-        return avg_val_loss, avg_trans_loss, avg_rot_loss
+        if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+            avg_comp1 = np.mean(val_metrics['single_step_loss'])
+            avg_comp2 = np.mean(val_metrics['multi_step_loss'])
+            avg_comp3 = np.mean(val_metrics['chain_consistency_loss'])
+        else:  # Original loss
+            avg_comp1 = np.mean(val_metrics['geodesic_loss'])
+            avg_comp2 = np.mean(val_metrics['consistency_loss'])
+            avg_comp3 = np.mean(val_metrics['magnitude_loss'])
+        
+        return avg_val_loss, avg_comp1, avg_comp2, avg_comp3
     
     def save_checkpoint(self, is_best=False):
         """Save model checkpoint."""
@@ -259,10 +328,10 @@ class TSformerTrainer:
             start_time = time.time()
             
             # Train
-            train_loss, train_trans, train_rot = self.train_epoch()
+            train_loss, train_geodesic, train_consistency, train_magnitude = self.train_epoch()
             
             # Validate
-            val_loss, val_trans, val_rot = self.validate_epoch()
+            val_loss, val_geodesic, val_consistency, val_magnitude = self.validate_epoch()
             
             # Update scheduler
             self.scheduler.step(val_loss)
@@ -276,8 +345,15 @@ class TSformerTrainer:
             current_lr = self.optimizer.param_groups[0]['lr']
             
             print(f"Epoch {epoch+1}/{self.config['num_epochs']} ({epoch_time:.1f}s):")
-            print(f"  Train Loss: {train_loss:.6f} (Trans: {train_trans:.6f}, Rot: {train_rot:.6f})")
-            print(f"  Val Loss:   {val_loss:.6f} (Trans: {val_trans:.6f}, Rot: {val_rot:.6f})")
+            
+            # Handle different loss types for logging
+            if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+                print(f"  Train Loss: {train_loss:.6f} (SingleStep: {train_geodesic:.6f}, MultiStep: {train_consistency:.6f}, Chain: {train_magnitude:.6f})")
+                print(f"  Val Loss:   {val_loss:.6f} (SingleStep: {val_geodesic:.6f}, MultiStep: {val_consistency:.6f}, Chain: {val_magnitude:.6f})")
+            else:  # Original loss
+                print(f"  Train Loss: {train_loss:.6f} (Geodesic: {train_geodesic:.6f}, Consistency: {train_consistency:.6f}, Magnitude: {train_magnitude:.6f})")
+                print(f"  Val Loss:   {val_loss:.6f} (Geodesic: {val_geodesic:.6f}, Consistency: {val_consistency:.6f}, Magnitude: {val_magnitude:.6f})")
+            
             print(f"  LR: {current_lr:.2e}")
             
             # Tensorboard logging
@@ -318,7 +394,11 @@ class TSformerTrainer:
         
         self.model.eval()
         test_losses = []
-        test_metrics = {'trans_loss': [], 'rot_loss': []}
+        # Handle both old and new loss component names
+        if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+            test_metrics = {'single_step_loss': [], 'multi_step_loss': [], 'chain_consistency_loss': []}
+        else:  # Original loss
+            test_metrics = {'geodesic_loss': [], 'consistency_loss': [], 'magnitude_loss': []}
         predictions = []
         ground_truths = []
         
@@ -327,12 +407,31 @@ class TSformerTrainer:
                 images = batch['images'].to(self.device)
                 poses = batch['poses'].to(self.device)
                 
+                # Check if we have relative poses (for multi-scale loss)
+                if 'relative_poses' in batch:
+                    relative_poses = batch['relative_poses'].to(self.device)
+                else:
+                    relative_poses = poses
+                
                 pred_poses = self.model(images)
-                loss, loss_dict = self.loss_fn(pred_poses, poses)
+                
+                # Calculate loss (check if multi-scale loss)
+                if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+                    loss, loss_dict = self.loss_fn(pred_poses, poses, relative_poses)
+                else:  # Original loss
+                    loss, loss_dict = self.loss_fn(pred_poses, poses)
                 
                 test_losses.append(loss_dict['total_loss'])
-                test_metrics['trans_loss'].append(loss_dict['trans_loss'])
-                test_metrics['rot_loss'].append(loss_dict['rot_loss'])
+                
+                # Handle different loss component names
+                if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+                    test_metrics['single_step_loss'].append(loss_dict['single_step_loss'])
+                    test_metrics['multi_step_loss'].append(loss_dict['multi_step_loss'])
+                    test_metrics['chain_consistency_loss'].append(loss_dict['chain_consistency_loss'])
+                else:  # Original loss
+                    test_metrics['geodesic_loss'].append(loss_dict['geodesic_loss'])
+                    test_metrics['consistency_loss'].append(loss_dict['consistency_loss'])
+                    test_metrics['magnitude_loss'].append(loss_dict['magnitude_loss'])
                 
                 # Store predictions for analysis
                 predictions.append(pred_poses.cpu().numpy())
@@ -340,22 +439,47 @@ class TSformerTrainer:
         
         # Calculate test metrics
         avg_test_loss = np.mean(test_losses)
-        avg_trans_loss = np.mean(test_metrics['trans_loss'])
-        avg_rot_loss = np.mean(test_metrics['rot_loss'])
         
-        print(f"Test Results:")
-        print(f"  Test Loss: {avg_test_loss:.6f}")
-        print(f"  Trans Loss: {avg_trans_loss:.6f}")
-        print(f"  Rot Loss: {avg_rot_loss:.6f}")
-        
-        # Save test results
-        test_results = {
-            'test_loss': avg_test_loss,
-            'trans_loss': avg_trans_loss,
-            'rot_loss': avg_rot_loss,
-            'predictions': np.concatenate(predictions, axis=0).tolist(),
-            'ground_truth': np.concatenate(ground_truths, axis=0).tolist()
-        }
+        if hasattr(self.loss_fn, 'λ2'):  # Multi-scale loss
+            avg_comp1 = np.mean(test_metrics['single_step_loss'])
+            avg_comp2 = np.mean(test_metrics['multi_step_loss'])
+            avg_comp3 = np.mean(test_metrics['chain_consistency_loss'])
+            
+            print(f"Test Results:")
+            print(f"  Test Loss: {avg_test_loss:.6f}")
+            print(f"  Single Step Loss: {avg_comp1:.6f}")
+            print(f"  Multi Step Loss: {avg_comp2:.6f}")
+            print(f"  Chain Consistency Loss: {avg_comp3:.6f}")
+            
+            # Save test results
+            test_results = {
+                'test_loss': avg_test_loss,
+                'single_step_loss': avg_comp1,
+                'multi_step_loss': avg_comp2,
+                'chain_consistency_loss': avg_comp3,
+                'predictions': np.concatenate(predictions, axis=0).tolist(),
+                'ground_truth': np.concatenate(ground_truths, axis=0).tolist()
+            }
+        else:  # Original loss
+            avg_comp1 = np.mean(test_metrics['geodesic_loss'])
+            avg_comp2 = np.mean(test_metrics['consistency_loss'])
+            avg_comp3 = np.mean(test_metrics['magnitude_loss'])
+            
+            print(f"Test Results:")
+            print(f"  Test Loss: {avg_test_loss:.6f}")
+            print(f"  Geodesic Loss: {avg_comp1:.6f}")
+            print(f"  Consistency Loss: {avg_comp2:.6f}")
+            print(f"  Magnitude Loss: {avg_comp3:.6f}")
+            
+            # Save test results
+            test_results = {
+                'test_loss': avg_test_loss,
+                'geodesic_loss': avg_comp1,
+                'consistency_loss': avg_comp2,
+                'magnitude_loss': avg_comp3,
+                'predictions': np.concatenate(predictions, axis=0).tolist(),
+                'ground_truth': np.concatenate(ground_truths, axis=0).tolist()
+            }
         
         results_path = self.output_dir / 'test_results.json'
         with open(results_path, 'w') as f:
@@ -400,7 +524,7 @@ def main():
                        help='Bags to reserve for testing')
     
     # Model
-    parser.add_argument('--sequence_length', type=int, default=3,
+    parser.add_argument('--sequence_length', type=int, default=8,
                        help='Number of frames per sequence')
     parser.add_argument('--overlap_frames', type=int, default=1,
                        help='Frame overlap between windows')
@@ -410,7 +534,7 @@ def main():
                        help='Which camera to use')
     parser.add_argument('--pretrained', action='store_true', default=True,
                        help='Use pretrained ViT backbone')
-    parser.add_argument('--freeze_backbone', action='store_true', default=True,
+    parser.add_argument('--freeze_backbone', action='store_true', default=False,
                        help='Freeze ViT backbone parameters')
     
     # Training

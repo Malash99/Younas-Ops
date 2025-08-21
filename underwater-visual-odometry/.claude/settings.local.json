@@ -20,8 +20,13 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:arxiv.org)"
+      "WebFetch(domain:arxiv.org)",
+      "Bash(pip show:*)",
+      "Bash(nvidia-smi:*)",
+      "Bash(pip install:*)",
+      "Bash(tensorboard:*)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }

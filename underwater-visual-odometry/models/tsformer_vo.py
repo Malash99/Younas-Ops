@@ -177,153 +177,309 @@ class TSformerVO(nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-class AdvancedTSformerVOLoss(nn.Module):
+class SE3GeometricLoss(nn.Module):
     """
-    State-of-the-art loss function for TSformer-VO training.
+    SE(3) Geometric Loss for Visual Odometry
     
-    Implements trajectory-following, curvature matching, and scale-aware losses
-    to prevent straight-line predictions and enforce realistic motion patterns.
+    Uses proper SE(3) manifold geometry for pose regression.
+    Prevents straight-line predictions through geometric constraints.
     """
     
-    def __init__(self, trans_weight=1.0, rot_weight=1.0, curvature_weight=2.0, 
-                 direction_weight=1.5, magnitude_weight=0.5, consistency_weight=0.5):
+    def __init__(self, geodesic_weight=1.0, consistency_weight=0.5, magnitude_weight=0.3):
         super().__init__()
-        self.trans_weight = trans_weight
-        self.rot_weight = rot_weight
-        self.curvature_weight = curvature_weight
-        self.direction_weight = direction_weight
+        self.geodesic_weight = geodesic_weight
+        self.consistency_weight = consistency_weight 
         self.magnitude_weight = magnitude_weight
-        self.consistency_weight = consistency_weight
+        
+        # Small epsilon for numerical stability
+        self.eps = 1e-8
         
     def forward(self, pred_poses, gt_poses):
         """
-        Compute advanced pose loss with trajectory-following constraints.
+        Compute SE(3) geometric loss.
         
         Args:
-            pred_poses: (batch_size, 6) - predicted [dx,dy,dz,droll,dpitch,dyaw]
-            gt_poses: (batch_size, 6) - ground truth [dx,dy,dz,droll,dpitch,dyaw]
+            pred_poses: (batch_size, 6) - [dx,dy,dz,droll,dpitch,dyaw] 
+            gt_poses: (batch_size, 6) - [dx,dy,dz,droll,dpitch,dyaw]
             
         Returns:
-            loss: Combined weighted loss
-            loss_dict: Dictionary with individual loss components
+            loss: SE(3) geometric loss
+            loss_dict: Dictionary with loss components
         """
-        # Split translation and rotation
-        pred_trans = pred_poses[:, :3]  # [dx, dy, dz]
-        pred_rot = pred_poses[:, 3:]    # [droll, dpitch, dyaw]
+        batch_size = pred_poses.shape[0]
+        device = pred_poses.device
         
-        gt_trans = gt_poses[:, :3]      # [dx, dy, dz]
-        gt_rot = gt_poses[:, 3:]        # [droll, dpitch, dyaw]
+        # 1. SE(3) Geodesic Distance Loss
+        geodesic_loss = self.se3_geodesic_loss(pred_poses, gt_poses)
         
-        # 1. Basic pose losses
-        trans_loss = F.mse_loss(pred_trans, gt_trans)
-        rot_loss = F.mse_loss(pred_rot, gt_rot)
+        # 2. SE(3) Chain Consistency Loss (for sequences)
+        consistency_loss = torch.tensor(0.0, device=device)
+        if batch_size >= 2:
+            consistency_loss = self.se3_chain_consistency_loss(pred_poses, gt_poses)
         
-        # 2. Scale-aware normalization
-        gt_trans_std = torch.std(gt_trans, dim=0, keepdim=True) + 1e-8
-        gt_rot_std = torch.std(gt_rot, dim=0, keepdim=True) + 1e-8
+        # 3. Motion Magnitude Loss (prevents zero motion)
+        magnitude_loss = self.motion_magnitude_loss(pred_poses, gt_poses)
         
-        trans_loss_normalized = F.mse_loss(pred_trans / gt_trans_std, gt_trans / gt_trans_std)
-        rot_loss_normalized = F.mse_loss(pred_rot / gt_rot_std, gt_rot / gt_rot_std)
-        
-        # 3. Trajectory curvature loss (prevents straight lines)
-        curvature_loss = torch.tensor(0.0, device=pred_poses.device)
-        if pred_poses.shape[0] > 2:
-            pred_curvature = self.compute_curvature(pred_trans)
-            gt_curvature = self.compute_curvature(gt_trans)
-            curvature_loss = F.mse_loss(pred_curvature, gt_curvature)
-            
-            # Add penalty for zero curvature (straight lines)
-            zero_curvature_penalty = torch.exp(-torch.norm(pred_curvature, dim=1)).mean()
-            curvature_loss += zero_curvature_penalty
-        
-        # 4. Direction change loss (enforces trajectory following)
-        direction_loss = torch.tensor(0.0, device=pred_poses.device)
-        if pred_poses.shape[0] > 1:
-            pred_directions = self.compute_direction_changes(pred_trans)
-            gt_directions = self.compute_direction_changes(gt_trans)
-            direction_loss = F.mse_loss(pred_directions, gt_directions)
-        
-        # 5. Motion magnitude loss (prevents near-zero predictions)
-        pred_magnitude = torch.norm(pred_trans, dim=1)
-        gt_magnitude = torch.norm(gt_trans, dim=1)
-        magnitude_loss = F.mse_loss(pred_magnitude, gt_magnitude)
-        
-        # Add penalty for small magnitude predictions
-        small_motion_penalty = torch.exp(-pred_magnitude).mean()
-        magnitude_loss += small_motion_penalty
-        
-        # 6. Motion consistency loss (overlapping windows)
-        consistency_loss = torch.tensor(0.0, device=pred_poses.device)
-        if pred_poses.shape[0] > 2:
-            # Ensure motion consistency across sequence
-            pred_velocity = pred_trans[1:] - pred_trans[:-1]
-            gt_velocity = gt_trans[1:] - gt_trans[:-1]
-            consistency_loss = F.mse_loss(pred_velocity, gt_velocity)
-        
-        # Combined loss with advanced weighting
-        total_loss = (self.trans_weight * trans_loss_normalized + 
-                     self.rot_weight * rot_loss_normalized + 
-                     self.curvature_weight * curvature_loss +
-                     self.direction_weight * direction_loss +
-                     self.magnitude_weight * magnitude_loss +
-                     self.consistency_weight * consistency_loss)
+        # Combined loss
+        total_loss = (self.geodesic_weight * geodesic_loss + 
+                     self.consistency_weight * consistency_loss +
+                     self.magnitude_weight * magnitude_loss)
         
         loss_dict = {
             'total_loss': total_loss.item(),
-            'trans_loss': trans_loss.item(),
-            'rot_loss': rot_loss.item(),
-            'trans_loss_norm': trans_loss_normalized.item(),
-            'rot_loss_norm': rot_loss_normalized.item(),
-            'curvature_loss': curvature_loss.item(),
-            'direction_loss': direction_loss.item(),
-            'magnitude_loss': magnitude_loss.item(),
-            'consistency_loss': consistency_loss.item()
+            'geodesic_loss': geodesic_loss.item(),
+            'consistency_loss': consistency_loss.item(),
+            'magnitude_loss': magnitude_loss.item()
         }
         
         return total_loss, loss_dict
     
-    def compute_curvature(self, trajectory):
-        """Compute trajectory curvature (second derivative)"""
-        if trajectory.shape[0] < 3:
-            return torch.zeros_like(trajectory[:1])
+    def se3_geodesic_loss(self, pred_poses, gt_poses):
+        """
+        Compute geodesic distance on SE(3) manifold.
         
-        # Second derivative approximation
-        curvature = trajectory[2:] - 2*trajectory[1:-1] + trajectory[:-2]
-        return curvature
+        Uses the Frobenius norm of the logarithm of the relative transformation.
+        """
+        # Convert 6DoF to SE(3) matrices
+        pred_T = self.pose_to_se3(pred_poses)  # (B, 4, 4)
+        gt_T = self.pose_to_se3(gt_poses)      # (B, 4, 4)
+        
+        # Compute relative transformation: T_rel = T_pred^{-1} * T_gt
+        pred_T_inv = self.se3_inverse(pred_T)
+        T_rel = torch.bmm(pred_T_inv, gt_T)  # (B, 4, 4)
+        
+        # Compute geodesic distance using matrix logarithm
+        geodesic_dist = self.se3_log_frobenius_norm(T_rel)
+        
+        return geodesic_dist.mean()
     
-    def compute_direction_changes(self, trajectory):
-        """Compute direction changes between consecutive points"""
-        if trajectory.shape[0] < 2:
-            return torch.zeros_like(trajectory[:1])
+    def se3_chain_consistency_loss(self, pred_poses, gt_poses):
+        """
+        Enforce SE(3) chain consistency: T_01 * T_12 = T_02
+        """
+        if pred_poses.shape[0] < 2:
+            return torch.tensor(0.0, device=pred_poses.device)
         
-        # Direction vectors
-        directions = trajectory[1:] - trajectory[:-1]
+        consistency_losses = []
         
-        # Normalize directions
-        directions_norm = F.normalize(directions, p=2, dim=1)
+        # Check consistency for all possible pairs
+        for i in range(pred_poses.shape[0] - 1):
+            # Single step transformation
+            T_step_pred = self.pose_to_se3(pred_poses[i:i+1])  # T_i
+            T_step_gt = self.pose_to_se3(gt_poses[i:i+1])
+            
+            # Next step
+            T_next_pred = self.pose_to_se3(pred_poses[i+1:i+2])  # T_{i+1} 
+            T_next_gt = self.pose_to_se3(gt_poses[i+1:i+2])
+            
+            # Chain composition vs direct prediction
+            T_composed_pred = torch.bmm(T_step_pred, T_next_pred)  # T_i * T_{i+1}
+            T_composed_gt = torch.bmm(T_step_gt, T_next_gt)
+            
+            # Compute relative error
+            T_composed_inv = self.se3_inverse(T_composed_pred)
+            T_rel = torch.bmm(T_composed_inv, T_composed_gt)
+            
+            consistency_dist = self.se3_log_frobenius_norm(T_rel)
+            consistency_losses.append(consistency_dist)
         
-        if directions_norm.shape[0] < 2:
-            return directions_norm
+        if consistency_losses:
+            return torch.stack(consistency_losses).mean()
+        else:
+            return torch.tensor(0.0, device=pred_poses.device)
+    
+    def motion_magnitude_loss(self, pred_poses, gt_poses):
+        """
+        Prevent zero motion predictions while respecting SE(3) geometry.
+        """
+        # Translation magnitude
+        pred_trans_mag = torch.norm(pred_poses[:, :3], dim=1)
+        gt_trans_mag = torch.norm(gt_poses[:, :3], dim=1)
+        trans_mag_loss = F.mse_loss(pred_trans_mag, gt_trans_mag)
         
-        # Direction changes (dot product between consecutive directions)
-        direction_changes = torch.sum(directions_norm[1:] * directions_norm[:-1], dim=1)
+        # Rotation magnitude (angle of rotation)
+        pred_rot_mag = torch.norm(pred_poses[:, 3:], dim=1)
+        gt_rot_mag = torch.norm(gt_poses[:, 3:], dim=1)
+        rot_mag_loss = F.mse_loss(pred_rot_mag, gt_rot_mag)
         
-        return direction_changes.unsqueeze(1)
+        # Penalty for very small motions (prevents degeneracy)
+        small_motion_penalty = torch.exp(-pred_trans_mag - pred_rot_mag).mean()
+        
+        return trans_mag_loss + rot_mag_loss + 0.1 * small_motion_penalty
+    
+    def pose_to_se3(self, poses):
+        """
+        Convert 6DoF pose to SE(3) transformation matrix.
+        
+        Args:
+            poses: (B, 6) - [dx, dy, dz, droll, dpitch, dyaw]
+            
+        Returns:
+            T: (B, 4, 4) - SE(3) transformation matrices
+        """
+        batch_size = poses.shape[0]
+        device = poses.device
+        
+        # Extract translation and rotation
+        translation = poses[:, :3]  # (B, 3)
+        rotation = poses[:, 3:]     # (B, 3) - Euler angles
+        
+        # Convert Euler angles to rotation matrices
+        R = self.euler_to_rotation_matrix(rotation)  # (B, 3, 3)
+        
+        # Create SE(3) matrices
+        T = torch.zeros(batch_size, 4, 4, device=device)
+        T[:, :3, :3] = R
+        T[:, :3, 3] = translation
+        T[:, 3, 3] = 1.0
+        
+        return T
+    
+    def euler_to_rotation_matrix(self, euler_angles):
+        """
+        Convert Euler angles (roll, pitch, yaw) to rotation matrices.
+        
+        Args:
+            euler_angles: (B, 3) - [roll, pitch, yaw] in radians
+            
+        Returns:
+            R: (B, 3, 3) - Rotation matrices
+        """
+        batch_size = euler_angles.shape[0]
+        device = euler_angles.device
+        
+        roll, pitch, yaw = euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2]
+        
+        # Compute trigonometric values
+        cos_r, sin_r = torch.cos(roll), torch.sin(roll)
+        cos_p, sin_p = torch.cos(pitch), torch.sin(pitch) 
+        cos_y, sin_y = torch.cos(yaw), torch.sin(yaw)
+        
+        # Construct rotation matrix (ZYX convention)
+        R = torch.zeros(batch_size, 3, 3, device=device)
+        
+        R[:, 0, 0] = cos_y * cos_p
+        R[:, 0, 1] = cos_y * sin_p * sin_r - sin_y * cos_r
+        R[:, 0, 2] = cos_y * sin_p * cos_r + sin_y * sin_r
+        
+        R[:, 1, 0] = sin_y * cos_p
+        R[:, 1, 1] = sin_y * sin_p * sin_r + cos_y * cos_r
+        R[:, 1, 2] = sin_y * sin_p * cos_r - cos_y * sin_r
+        
+        R[:, 2, 0] = -sin_p
+        R[:, 2, 1] = cos_p * sin_r
+        R[:, 2, 2] = cos_p * cos_r
+        
+        return R
+    
+    def se3_inverse(self, T):
+        """
+        Compute inverse of SE(3) transformation matrices.
+        
+        Args:
+            T: (B, 4, 4) - SE(3) matrices
+            
+        Returns:
+            T_inv: (B, 4, 4) - Inverse SE(3) matrices
+        """
+        batch_size = T.shape[0]
+        device = T.device
+        
+        # Extract rotation and translation
+        R = T[:, :3, :3]  # (B, 3, 3)
+        t = T[:, :3, 3]   # (B, 3)
+        
+        # Inverse: R^T and -R^T * t
+        R_inv = R.transpose(-2, -1)  # (B, 3, 3)
+        t_inv = -torch.bmm(R_inv, t.unsqueeze(-1)).squeeze(-1)  # (B, 3)
+        
+        # Construct inverse matrix
+        T_inv = torch.zeros(batch_size, 4, 4, device=device)
+        T_inv[:, :3, :3] = R_inv
+        T_inv[:, :3, 3] = t_inv
+        T_inv[:, 3, 3] = 1.0
+        
+        return T_inv
+    
+    def se3_log_frobenius_norm(self, T):
+        """
+        Compute Frobenius norm of SE(3) matrix logarithm.
+        
+        This gives the geodesic distance on the SE(3) manifold.
+        
+        Args:
+            T: (B, 4, 4) - SE(3) matrices
+            
+        Returns:
+            dist: (B,) - Geodesic distances
+        """
+        batch_size = T.shape[0]
+        device = T.device
+        
+        # Extract rotation and translation
+        R = T[:, :3, :3]  # (B, 3, 3)
+        t = T[:, :3, 3]   # (B, 3)
+        
+        # Compute rotation angle using trace
+        trace_R = torch.diagonal(R, dim1=-2, dim2=-1).sum(-1)  # (B,)
+        cos_angle = (trace_R - 1) / 2
+        cos_angle = torch.clamp(cos_angle, -1 + self.eps, 1 - self.eps)
+        angle = torch.arccos(cos_angle)  # (B,)
+        
+        # Handle small angles (linearization near identity)
+        small_angle_mask = angle < self.eps
+        
+        # For small angles, use linearized version
+        geodesic_dist = torch.zeros(batch_size, device=device)
+        
+        # Small angle case: ||log(T)||_F ≈ ||t||_2 + ||skew(R-I)||_F
+        if small_angle_mask.any():
+            t_small = t[small_angle_mask]
+            R_small = R[small_angle_mask]
+            
+            # Skew-symmetric part of (R - I)
+            R_minus_I = R_small - torch.eye(3, device=device).unsqueeze(0)
+            skew_norm = torch.norm(R_minus_I, dim=(-2, -1))  # Frobenius norm
+            
+            dist_small = torch.norm(t_small, dim=-1) + skew_norm
+            geodesic_dist[small_angle_mask] = dist_small
+        
+        # Large angle case: full SE(3) logarithm
+        large_angle_mask = ~small_angle_mask
+        if large_angle_mask.any():
+            t_large = t[large_angle_mask]
+            angle_large = angle[large_angle_mask]
+            
+            # Translation part scaled by sinc function
+            sinc_val = torch.sin(angle_large) / (angle_large + self.eps)
+            scale_factor = angle_large / (2 * sinc_val + self.eps)
+            
+            t_scaled = t_large * scale_factor.unsqueeze(-1)
+            
+            # Rotation part contribution
+            rot_contrib = angle_large
+            
+            # Combined distance
+            dist_large = torch.sqrt(torch.norm(t_scaled, dim=-1)**2 + rot_contrib**2)
+            geodesic_dist[large_angle_mask] = dist_large
+        
+        return geodesic_dist
 
 
-def create_tsformer_vo(sequence_length=8, pretrained=True, freeze_backbone=False, image_size=224):
+def create_tsformer_vo(sequence_length=8, pretrained=True, freeze_backbone=False, image_size=224, use_multi_scale_loss=True):
     """
-    Factory function to create TSformer-VO model.
+    Factory function to create TSformer-VO model with advanced loss function.
     
     Args:
         sequence_length: Number of frames in input sequence
-        pretrained: Use pretrained ViT backbone
+        pretrained: Use pretrained ViT backbone  
         freeze_backbone: Freeze ViT parameters
         image_size: Input image resolution
+        use_multi_scale_loss: Use multi-scale SE(3) loss (recommended for better scale matching)
         
     Returns:
         model: TSformerVO instance
-        loss_fn: TSformerVOLoss instance
+        loss_fn: Loss function instance
     """
     if pretrained:
         model_name = "google/vit-base-patch16-224"
@@ -347,14 +503,25 @@ def create_tsformer_vo(sequence_length=8, pretrained=True, freeze_backbone=False
         image_size=image_size
     )
     
-    loss_fn = AdvancedTSformerVOLoss(
-        trans_weight=1.0, 
-        rot_weight=1.0, 
-        curvature_weight=2.0,
-        direction_weight=1.5,
-        magnitude_weight=0.5,
-        consistency_weight=0.5
-    )
+    # Choose loss function
+    if use_multi_scale_loss:
+        # Use multi-scale SE(3) loss for better trajectory scale matching
+        from .multi_scale_se3_loss import create_multi_scale_loss
+        loss_fn = create_multi_scale_loss(
+            single_step_weight=1.0,      # λ₁: Local accuracy
+            multi_step_weight=2.0,       # λ₂: Trajectory scale (higher!)
+            chain_consistency_weight=0.5, # λ₃: Geometric consistency
+            sequence_length=sequence_length
+        )
+        print("Using MultiScaleSE3Loss for improved trajectory scale matching!")
+    else:
+        # Use original SE(3) geometric loss
+        loss_fn = SE3GeometricLoss(
+            geodesic_weight=1.0,
+            consistency_weight=0.5, 
+            magnitude_weight=0.3
+        )
+        print("Using original SE3GeometricLoss")
     
     return model, loss_fn
 
@@ -381,9 +548,9 @@ if __name__ == "__main__":
         pred_poses = model(dummy_images)
         print(f"Output shape: {pred_poses.shape}")
         
-        # Test loss
+        # Test SE(3) geometric loss
         loss, loss_dict = loss_fn(pred_poses, dummy_poses)
-        print(f"Loss: {loss.item():.6f}")
+        print(f"SE(3) Geometric Loss: {loss.item():.6f}")
         print("Loss components:", loss_dict)
     
     # Model info

@@ -1,0 +1,22 @@
+{
+  "model_info": {
+    "checkpoint": "experiments/tsformer_vo_multi_scale/checkpoint_best.pth",
+    "sequence_length": 8,
+    "loss_type": "multi_scale_se3",
+    "architecture": "TSformer-VO"
+  },
+  "metrics": {
+    "mean_error": 3.41401833565247,
+    "max_error": 6.969073784559131,
+    "final_error": 6.969073784559131,
+    "trajectory_length_gt": 1.8509325346459333,
+    "trajectory_length_pred": 10.881468225901141,
+    "scale_ratio": 5.8789113175228005
+  },
+  "trajectory_stats": {
+    "prediction_points": 170,
+    "ground_truth_points": 200,
+    "prediction_scale": 6.186109707321492,
+    "ground_truth_scale": 2.238314699821497
+  }
+}
