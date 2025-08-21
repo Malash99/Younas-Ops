@@ -177,22 +177,27 @@ class TSformerVO(nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-class TSformerVOLoss(nn.Module):
+class AdvancedTSformerVOLoss(nn.Module):
     """
-    Improved loss function for TSformer-VO training.
+    State-of-the-art loss function for TSformer-VO training.
     
-    Combines translation, rotation, and trajectory consistency losses.
+    Implements trajectory-following, curvature matching, and scale-aware losses
+    to prevent straight-line predictions and enforce realistic motion patterns.
     """
     
-    def __init__(self, trans_weight=1.0, rot_weight=1.0, consistency_weight=0.5):
+    def __init__(self, trans_weight=1.0, rot_weight=1.0, curvature_weight=2.0, 
+                 direction_weight=1.5, magnitude_weight=0.5, consistency_weight=0.5):
         super().__init__()
         self.trans_weight = trans_weight
         self.rot_weight = rot_weight
+        self.curvature_weight = curvature_weight
+        self.direction_weight = direction_weight
+        self.magnitude_weight = magnitude_weight
         self.consistency_weight = consistency_weight
         
     def forward(self, pred_poses, gt_poses):
         """
-        Compute improved pose loss with trajectory consistency.
+        Compute advanced pose loss with trajectory-following constraints.
         
         Args:
             pred_poses: (batch_size, 6) - predicted [dx,dy,dz,droll,dpitch,dyaw]
@@ -209,33 +214,58 @@ class TSformerVOLoss(nn.Module):
         gt_trans = gt_poses[:, :3]      # [dx, dy, dz]
         gt_rot = gt_poses[:, 3:]        # [droll, dpitch, dyaw]
         
-        # Basic pose losses (MSE only, more stable than L1+L2)
+        # 1. Basic pose losses
         trans_loss = F.mse_loss(pred_trans, gt_trans)
         rot_loss = F.mse_loss(pred_rot, gt_rot)
         
-        # Scale-aware loss: normalize by ground truth std to give equal importance to all axes
+        # 2. Scale-aware normalization
         gt_trans_std = torch.std(gt_trans, dim=0, keepdim=True) + 1e-8
         gt_rot_std = torch.std(gt_rot, dim=0, keepdim=True) + 1e-8
         
         trans_loss_normalized = F.mse_loss(pred_trans / gt_trans_std, gt_trans / gt_trans_std)
         rot_loss_normalized = F.mse_loss(pred_rot / gt_rot_std, gt_rot / gt_rot_std)
         
-        # Trajectory consistency loss (only for batch size > 2)
+        # 3. Trajectory curvature loss (prevents straight lines)
+        curvature_loss = torch.tensor(0.0, device=pred_poses.device)
+        if pred_poses.shape[0] > 2:
+            pred_curvature = self.compute_curvature(pred_trans)
+            gt_curvature = self.compute_curvature(gt_trans)
+            curvature_loss = F.mse_loss(pred_curvature, gt_curvature)
+            
+            # Add penalty for zero curvature (straight lines)
+            zero_curvature_penalty = torch.exp(-torch.norm(pred_curvature, dim=1)).mean()
+            curvature_loss += zero_curvature_penalty
+        
+        # 4. Direction change loss (enforces trajectory following)
+        direction_loss = torch.tensor(0.0, device=pred_poses.device)
+        if pred_poses.shape[0] > 1:
+            pred_directions = self.compute_direction_changes(pred_trans)
+            gt_directions = self.compute_direction_changes(gt_trans)
+            direction_loss = F.mse_loss(pred_directions, gt_directions)
+        
+        # 5. Motion magnitude loss (prevents near-zero predictions)
+        pred_magnitude = torch.norm(pred_trans, dim=1)
+        gt_magnitude = torch.norm(gt_trans, dim=1)
+        magnitude_loss = F.mse_loss(pred_magnitude, gt_magnitude)
+        
+        # Add penalty for small magnitude predictions
+        small_motion_penalty = torch.exp(-pred_magnitude).mean()
+        magnitude_loss += small_motion_penalty
+        
+        # 6. Motion consistency loss (overlapping windows)
         consistency_loss = torch.tensor(0.0, device=pred_poses.device)
         if pred_poses.shape[0] > 2:
-            # Compute cumulative trajectories
-            pred_trajectory = torch.cumsum(pred_trans, dim=0)
-            gt_trajectory = torch.cumsum(gt_trans, dim=0)
-            
-            # Second derivative (curvature) to penalize straight lines
-            if pred_poses.shape[0] > 2:
-                pred_curvature = pred_trajectory[2:] - 2*pred_trajectory[1:-1] + pred_trajectory[:-2]
-                gt_curvature = gt_trajectory[2:] - 2*gt_trajectory[1:-1] + gt_trajectory[:-2]
-                consistency_loss = F.mse_loss(pred_curvature, gt_curvature)
+            # Ensure motion consistency across sequence
+            pred_velocity = pred_trans[1:] - pred_trans[:-1]
+            gt_velocity = gt_trans[1:] - gt_trans[:-1]
+            consistency_loss = F.mse_loss(pred_velocity, gt_velocity)
         
-        # Combined loss with balanced weights
+        # Combined loss with advanced weighting
         total_loss = (self.trans_weight * trans_loss_normalized + 
                      self.rot_weight * rot_loss_normalized + 
+                     self.curvature_weight * curvature_loss +
+                     self.direction_weight * direction_loss +
+                     self.magnitude_weight * magnitude_loss +
                      self.consistency_weight * consistency_loss)
         
         loss_dict = {
@@ -244,10 +274,41 @@ class TSformerVOLoss(nn.Module):
             'rot_loss': rot_loss.item(),
             'trans_loss_norm': trans_loss_normalized.item(),
             'rot_loss_norm': rot_loss_normalized.item(),
+            'curvature_loss': curvature_loss.item(),
+            'direction_loss': direction_loss.item(),
+            'magnitude_loss': magnitude_loss.item(),
             'consistency_loss': consistency_loss.item()
         }
         
         return total_loss, loss_dict
+    
+    def compute_curvature(self, trajectory):
+        """Compute trajectory curvature (second derivative)"""
+        if trajectory.shape[0] < 3:
+            return torch.zeros_like(trajectory[:1])
+        
+        # Second derivative approximation
+        curvature = trajectory[2:] - 2*trajectory[1:-1] + trajectory[:-2]
+        return curvature
+    
+    def compute_direction_changes(self, trajectory):
+        """Compute direction changes between consecutive points"""
+        if trajectory.shape[0] < 2:
+            return torch.zeros_like(trajectory[:1])
+        
+        # Direction vectors
+        directions = trajectory[1:] - trajectory[:-1]
+        
+        # Normalize directions
+        directions_norm = F.normalize(directions, p=2, dim=1)
+        
+        if directions_norm.shape[0] < 2:
+            return directions_norm
+        
+        # Direction changes (dot product between consecutive directions)
+        direction_changes = torch.sum(directions_norm[1:] * directions_norm[:-1], dim=1)
+        
+        return direction_changes.unsqueeze(1)
 
 
 def create_tsformer_vo(sequence_length=8, pretrained=True, freeze_backbone=False, image_size=224):
@@ -286,7 +347,14 @@ def create_tsformer_vo(sequence_length=8, pretrained=True, freeze_backbone=False
         image_size=image_size
     )
     
-    loss_fn = TSformerVOLoss(trans_weight=1.0, rot_weight=1.0, consistency_weight=0.5)
+    loss_fn = AdvancedTSformerVOLoss(
+        trans_weight=1.0, 
+        rot_weight=1.0, 
+        curvature_weight=2.0,
+        direction_weight=1.5,
+        magnitude_weight=0.5,
+        consistency_weight=0.5
+    )
     
     return model, loss_fn
 

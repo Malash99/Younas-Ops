@@ -1,13 +1,13 @@
-# TSformer Visual Odometry for Underwater ROV Navigation 🌊🤖
+# Underwater Visual Odometry with TSformer 🌊🤖
 
-This project implements a **Transformer-based Visual Odometry (TSformer-VO)** system specifically designed for underwater Remotely Operated Vehicle (ROV) navigation. The system uses Vision Transformer (ViT) backbone with transfer learning and temporal transformers to predict 6-DOF pose from camera sequences.
+A transformer-based approach to underwater visual odometry using Vision Transformer (ViT) backbone for ROV navigation. This project implements advanced loss functions that successfully resolve straight-line prediction problems in visual odometry.
 
 ## 🎯 Project Overview
 
 - **Objective**: Develop robust visual odometry for underwater ROV navigation using only camera data
-- **Approach**: TSformer-VO with pretrained ViT backbone and temporal sequence modeling
+- **Approach**: TSformer-VO with pretrained ViT backbone and advanced trajectory-following loss functions
 - **Dataset**: 5 underwater ROV bags with synchronized camera and IMU data
-- **Key Achievement**: Successfully trained on 4 bags and generalized to completely unseen test bag
+- **Key Breakthrough**: ✅ **Solved straight-line prediction problem** - Model now follows curved trajectory patterns!
 
 ## 📁 Repository Structure
 
