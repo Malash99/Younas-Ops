@@ -24,7 +24,10 @@
       "Bash(pip show:*)",
       "Bash(nvidia-smi:*)",
       "Bash(pip install:*)",
-      "Bash(tensorboard:*)"
+      "Bash(tensorboard:*)",
+      "WebSearch",
+      "Bash(set PYTHONPATH=.)",
+      "Bash(src)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
